@@ -398,3 +398,49 @@ def check_spf(domain: str, resolver: Resolver) -> tuple[SpfAnalysis, list[Findin
     if analysis.temp_error:
         f.append(Finding("spf", "warning", "spf.dns_error", "Some lookups in the SPF tree timed out; results may be incomplete."))
     return analysis, f
+
+
+def evaluate_stored(tree: dict | None, ip: str, lookups: int = 0) -> str:
+    """Offline evaluation against a tree stored by SpfAnalysis.as_dict() (dns_check.result['spf'])."""
+    if not tree:
+        return "none"
+    if lookups > LOOKUP_LIMIT:
+        return "permerror"
+    return _eval_stored_node(tree, ipaddress.ip_address(ip))
+
+
+def _eval_stored_node(node: dict, ip) -> str:
+    if node.get("error"):
+        return "permerror"
+    uncertain = False
+    redirect = None
+    for t in node.get("terms", []):
+        text = t["term"]
+        if text.lower().startswith(("redirect=", "exp=")) or ("=" in text and ":" not in text.split("=")[0]):
+            if text.lower().startswith("redirect="):
+                redirect = t.get("child")
+            continue
+        q = text[0] if text[0] in "+-~?" else "+"
+        name = text.lstrip("+-~?").split(":", 1)[0].split("/", 1)[0].lower()
+        if name == "all":
+            return "unknown" if uncertain else QUALIFIER_RESULT[q]
+        if t.get("unresolvable"):
+            uncertain = True
+            continue
+        if name == "include":
+            child = t.get("child")
+            if not child:
+                return "permerror"
+            r = _eval_stored_node(child, ip)
+            if r == "pass":
+                return QUALIFIER_RESULT[q]
+            if r in ("permerror", "unknown"):
+                return r
+            continue
+        for n in t.get("networks", []):
+            net = ipaddress.ip_network(n)
+            if net.version == ip.version and ip in net:
+                return "unknown" if uncertain else QUALIFIER_RESULT[q]
+    if redirect:
+        return _eval_stored_node(redirect, ip)
+    return "unknown" if uncertain else "neutral"

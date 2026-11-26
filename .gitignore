@@ -12,3 +12,5 @@ import/*
 *.egg-info/
 secrets/*
 !secrets/.gitkeep
+backend/dmarc/static/
+frontend/node_modules/

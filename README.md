@@ -4,39 +4,104 @@ Leest DMARC-aggregate reports (RUA) en forensic/failure reports (RUF) in, slaat 
 PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
 `p=quarantine` / `p=reject` gaan voor tenazenergy.com.
 
-> **Status: fase 3 van 5 — parser, opslag, ophalen via Microsoft Graph, DNS-controle,
-> IP-verrijking en aanbevelingen.** De UI met SSO (fase 4) en meldingen (fase 5) volgen.
+> **Status: fase 4 van 5 — webinterface met SSO is klaar.** Meldingen per mail (fase 5)
+> volgen.
 
 ## Installatie (Docker-host in Azure)
 
-1. **App-registratie:** volg [docs/app-registratie.md](docs/app-registratie.md).
+1. **App-registraties en Application Gateway:** volg
+   [docs/app-registratie.md](docs/app-registratie.md). Je hebt de mailbox-app (§1), de
+   portal-app (§2) en de Application Gateway (§2.1) nodig.
 2. **Configuratie:**
    ```bash
    cp .env.example .env
    ```
-   Vul in `.env` in: `POSTGRES_PASSWORD`, `DMARC_GRAPH_TENANT_ID`, `DMARC_GRAPH_CLIENT_ID`
-   en het certificaat (in `./secrets/`) of het secret.
-3. **Starten:** dit voert de migraties uit en start de worker en de backup-container.
+   ```bash
+   python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+   ```
+   Vul in `.env` in:
+   - `POSTGRES_PASSWORD`;
+   - de Graph-gegevens: `DMARC_GRAPH_TENANT_ID`, `DMARC_GRAPH_CLIENT_ID` en het
+     certificaat (in `./secrets/`) of het secret;
+   - de portal: `DMARC_SECRET_KEY` (de uitvoer van het commando hierboven),
+     `DMARC_OIDC_CLIENT_ID` en `DMARC_OIDC_CLIENT_SECRET`;
+   - `FORWARDED_ALLOW_IPS`: het subnet van de Application Gateway.
+3. **Starten:** dit voert de migraties uit en start `api` (poort 8080), `worker` en `backup`.
    ```bash
    docker compose up -d --build
    ```
-4. **Domein toevoegen:**
+4. **Noodaccount (aanbevolen):** zo kom je ook binnen als Entra ID of de gateway niet
+   werkt. Dit account staat standaard uit.
    ```bash
-   docker compose run --rm cli domain add tenazenergy.com
+   docker compose run --rm cli user add noodbeheer --role admin
    ```
-5. **Mailbox instellen en testen:**
-   ```bash
-   docker compose run --rm cli settings set mailbox.address dmarc@tenazenergy.com
-   ```
+   Zet het alleen aan als het nodig is, met `DMARC_LOCAL_LOGIN_ENABLED=true` in `.env`,
+   gevolgd door `docker compose up -d api`.
+5. **Inloggen:** open https://dmarcportal.tenazenergy.com en kies **Sign in with
+   Microsoft**. Daarna, onder **Settings**:
+   - domein `tenazenergy.com` toevoegen;
+   - het mailboxadres instellen.
+6. **Mailbox testen:**
    ```bash
    docker compose run --rm cli graph-check --other-mailbox iemand@tenazenergy.com
    ```
-   ```bash
-   docker compose run --rm cli queue fetch
-   ```
-   ```bash
-   docker compose logs -f worker
-   ```
+   Daarna in de UI: **Mail processing → Fetch mail → Run now**.
+
+## Webinterface (fase 4)
+
+**Inloggen:**
+- Via Microsoft Entra ID (OIDC, authorization code + PKCE, alleen jullie tenant).
+- De rol komt uit de app role in het token, en wordt bij elke login opnieuw gelezen:
+  - **DMARC.Admin**: alles;
+  - **DMARC.Viewer**: alles lezen en exporteren, behalve RUF.
+- Accounts zonder rol komen niet binnen.
+- Lokale noodaccounts gebruiken argon2-hashes. Na 5 foute pogingen volgt een lockout van
+  15 minuten, en er geldt een rate-limit per IP.
+
+**Pagina's:**
+
+| Pagina | Inhoud |
+|---|---|
+| Dashboard | Volume, % DMARC-pass, SPF/DKIM-alignment, trend per dag (grafiek of tabel), "Ready for p=reject?" met de volgende DNS-stap, top-aanbevelingen, top-bronnen |
+| Sending sources | Per provider/ASN: volume, aandeel, pass- en alignment-%, IP's, bounce- en DKIM-domeinen, selectors. Admins markeren hier legitiem/onbekend/misbruik met een notitie. CSV-export |
+| Recommendations | Alle aanbevelingen in gewone taal |
+| DNS check | Het DMARC-record, de SPF-boom met lookup-telling, DKIM-selectors met sleutellengte, alle bevindingen met de oplossing, en "Check now" |
+| Records | Filters op domein, periode, rapporteur, resultaat, disposition, IP en bron; detail per record met SPF/DKIM-resultaten; CSV-export (max. 200.000 rijen) |
+| Reports | Rapporten per rapporteur, met detail en download van de originele XML |
+| IP detail | PTR (met forward-confirmatie), ASN, land, herkende verzender, en of het IP in jullie huidige SPF staat |
+| Failure reports | RUF, alleen voor admins. Elke keer dat iemand er een bekijkt, komt dat in het auditlog |
+| Mail processing | Status van de worker-jobs met "Run now", en alle verwerkte mail met de problemen bovenaan |
+| Settings | Domeinen beheren (ook "parked"), en mailboxadres, mappen en interval wijzigen |
+| Users & audit | Gebruikers uitschakelen, rollen van lokale accounts, en het auditlog (logins, wijzigingen, exports) |
+
+**Beveiliging:**
+- Sessiecookie: HttpOnly, Secure, SameSite=Lax, 8 uur geldig.
+- CSRF-token op alle wijzigende verzoeken.
+- Strikte Content-Security-Policy, X-Frame-Options en HSTS.
+- CSV-cellen worden beschermd tegen formula-injectie.
+- XML-downloads gaan als bijlage met `nosniff`.
+- Secrets staan alleen in de environment.
+
+**Lokaal proberen zonder Entra ID:**
+
+```bash
+docker compose run --rm cli user add admin --role admin
+```
+
+Zet in `.env` `DMARC_LOCAL_LOGIN_ENABLED=true` en `DMARC_COOKIE_SECURE=false`. Daarna:
+
+```bash
+docker compose up -d
+```
+
+Open http://localhost:8080.
+
+**Frontend ontwikkelen:** dit gebruikt een Vite-devserver die `/api` doorstuurt naar
+poort 8080.
+
+```bash
+cd frontend && npm install && npm run dev
+```
 
 ## Ophalen van mail (fase 2)
 
@@ -238,6 +303,8 @@ nooit de productiedatabase.
 | `dmarc geoip-update` | DB-IP Lite direct downloaden |
 | `dmarc analyze <domein> [--days n] [--json]` | Bronnen, aanbevelingen en p=reject-indicator |
 | `dmarc classify <domein> <bron> legit\|unknown\|abuse` | Een bron markeren |
+| `dmarc user list\|add\|password\|disable\|enable [naam] [--role]` | Lokale noodaccounts beheren |
+| `dmarc api [--port 8080]` | De webinterface/API starten (doet de `api`-container) |
 
 ## Configuratie
 
@@ -269,6 +336,10 @@ Secrets staan nooit in de code.
   (inclusief de SPF-boom) en de bevindingen.
 - **`daily_stat`**: dagtotalen per domein en bron.
 - **`source_classification`**: legitiem, onbekend of misbruik per domein en bron.
+- **`app_user`**: Entra ID-gebruikers (aangemaakt bij de eerste login) en lokale
+  noodaccounts.
+- **`audit_log`**: wie wat wanneer deed: logins, mislukte logins, classificaties,
+  instellingen, exports en het inzien van RUF.
 
 ## Testfixtures
 

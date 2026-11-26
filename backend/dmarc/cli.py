@@ -6,6 +6,7 @@ import argparse
 import dataclasses
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -301,6 +302,68 @@ def cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_user(args: argparse.Namespace) -> int:
+    """Manage local break-glass accounts (Entra ID users are created on first sign-in)."""
+    import getpass
+    import os
+
+    from sqlalchemy import select
+
+    from dmarc.api.auth import hash_password
+    from dmarc.db.models import User
+    from dmarc.db.session import session_scope
+
+    with session_scope() as session:
+        if args.action == "list":
+            for u in session.scalars(select(User).order_by(User.subject)):
+                kind = "local" if u.is_local else "entra"
+                print(f"{u.id:>4} {kind:<6} {u.role:<7} {'active' if u.active else 'disabled':<9} "
+                      f"{u.email or u.name or u.subject}  last login: {u.last_login or '-'}")
+            return 0
+        if not args.username:
+            print("username required", file=sys.stderr)
+            return 2
+        subject = f"local:{args.username.lower()}"
+        user = session.scalars(select(User).where(User.subject == subject)).one_or_none()
+        if args.action in ("add", "password"):
+            pw = os.environ.get("DMARC_NEW_PASSWORD") or getpass.getpass("Password (min. 14 characters): ")
+            if not os.environ.get("DMARC_NEW_PASSWORD") and getpass.getpass("Repeat: ") != pw:
+                print("passwords do not match", file=sys.stderr)
+                return 2
+            try:
+                pw_hash = hash_password(pw)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            if user is None:
+                if args.action == "password":
+                    print("no such local user", file=sys.stderr)
+                    return 2
+                user = User(subject=subject, name=args.username, role=args.role, is_local=True, active=True,
+                            failed_logins=0)
+                session.add(user)
+            user.password_hash, user.failed_logins, user.locked_until = pw_hash, 0, None
+            if args.action == "add":
+                user.role = args.role
+            print(f"local user {args.username} saved ({user.role}). Local login must be enabled: "
+                  "DMARC_LOCAL_LOGIN_ENABLED=true")
+        elif args.action in ("disable", "enable"):
+            if user is None:
+                print("no such local user", file=sys.stderr)
+                return 2
+            user.active = args.action == "enable"
+            print(f"{args.username} {args.action}d")
+    return 0
+
+
+def cmd_api(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    uvicorn.run("dmarc.api.app:app_factory", factory=True, host=args.host, port=args.port,
+                proxy_headers=True, forwarded_allow_ips=args.forwarded_allow_ips, access_log=False)
+    return 0
+
+
 def _iter_files(paths: list[str]):
     for p in map(Path, paths):
         if p.is_dir():
@@ -384,6 +447,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("status", choices=["legit", "unknown", "abuse"])
     p.add_argument("--note")
     p.set_defaults(func=cmd_classify)
+
+    p = sub.add_parser("user", help="manage local break-glass accounts")
+    p.add_argument("action", choices=["list", "add", "password", "disable", "enable"])
+    p.add_argument("username", nargs="?")
+    p.add_argument("--role", choices=["admin", "viewer"], default="admin")
+    p.set_defaults(func=cmd_user)
+
+    p = sub.add_parser("api", help="run the web UI / API server")
+    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--port", type=int, default=8080)
+    p.add_argument("--forwarded-allow-ips", default=os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"),
+                   help="proxies whose X-Forwarded-* headers are trusted (the Application Gateway subnet)")
+    p.set_defaults(func=cmd_api)
 
     args = parser.parse_args(argv)
     return args.func(args)

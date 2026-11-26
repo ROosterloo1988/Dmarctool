@@ -47,7 +47,7 @@ def session(engine):
     with engine.begin() as conn:
         conn.execute(text(
             "TRUNCATE auth_result, aggregate_record, aggregate_report, forensic_report, inbound_message, domain, "
-            "app_setting, job_run, ip_info, dns_check, daily_stat, source_classification "
+            "app_setting, job_run, ip_info, dns_check, daily_stat, source_classification, app_user, audit_log "
             "RESTART IDENTITY CASCADE"
         ))
     with Session(engine) as s:
@@ -111,6 +111,10 @@ def geoip_files(tmp_path_factory):
 
 @pytest.fixture
 def fake_dns():
+    return make_fake_dns()
+
+
+def make_fake_dns():
     """DNS for the example.com test domain and the source IPs used in the fixtures."""
     from dmarc.dnscheck.resolver import FakeResolver
 

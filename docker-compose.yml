@@ -1,9 +1,11 @@
-# DMARC reporting: database, worker (mail fetch + retention) and daily backups.
-# Phase 4 adds the 'api' service (web UI with Entra ID SSO).
+# DMARC reporting: database, web UI/API, worker (mail fetch, enrichment, DNS checks, retention)
+# and daily backups.
 name: dmarc
 
 x-app: &app
-  build: ./backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
   image: dmarc-app:latest
   restart: unless-stopped
   env_file: .env
@@ -40,6 +42,25 @@ services:
     <<: *app
     restart: "no"
     command: ["migrate"]
+
+  api:
+    <<: *app
+    command: ["api", "--port", "8080"]
+    environment:
+      DMARC_DATABASE_URL: postgresql+psycopg://dmarc:${POSTGRES_PASSWORD}@db:5432/dmarc
+      # Only trust X-Forwarded-* from the Application Gateway subnet (set in .env).
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+    ports:
+      # The Azure Application Gateway connects to <docker-host-private-ip>:8080.
+      - "${API_BIND:-0.0.0.0}:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     <<: *app

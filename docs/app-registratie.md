@@ -142,7 +142,7 @@ Verwachte uitvoer:
 
 ---
 
-## 2. Portal-app voor SSO (fase 4, nu al voor te bereiden)
+## 2. Portal-app voor SSO
 
 1. Kies **App registrations → New registration** en vul in:
 
@@ -177,15 +177,24 @@ Verwachte uitvoer:
    > Groepen aan een app-rol toewijzen vereist Entra ID P1 of hoger. Zonder P1 wijs je
    > gebruikers individueel toe.
 
-Noteer voor fase 4 de volgende gegevens:
-- tenant ID;
-- client ID van de portal-app;
-- client secret.
+Zet de waarden in `.env`:
+
+```
+DMARC_OIDC_CLIENT_ID=<Application (client) ID van de portal-app>
+DMARC_OIDC_CLIENT_SECRET=<Value van het client secret>
+# DMARC_OIDC_TENANT_ID is niet nodig als het dezelfde tenant is als DMARC_GRAPH_TENANT_ID
+```
+
+Controleer na het starten de login:
+- een gebruiker met *DMARC Admin* ziet ook **Settings** en **Users & audit**;
+- een gebruiker zonder rol krijgt "Your account has no access".
+
+Wijzig je de rol van iemand in Entra, dan geldt die bij de volgende login.
 
 ### 2.1 Azure Application Gateway
 
 De Application Gateway handelt TLS af met het wildcard-certificaat `*.tenazenergy.com` en
-stuurt het verkeer via HTTP door naar de Docker-host. De api-container komt in fase 4.
+stuurt het verkeer via HTTP door naar de `api`-container op de Docker-host.
 
 | Onderdeel | Instelling |
 |---|---|

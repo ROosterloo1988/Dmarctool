@@ -65,6 +65,21 @@ class Settings(BaseSettings):
     significant_messages: int = 10  # minimum failing messages before a source is reported
     min_report_days: int = 14
 
+    # --- Web UI / authentication -------------------------------------------------------
+    secret_key: SecretStr | None = None  # signs session cookies; required for the API
+    public_url: str = "https://dmarcportal.tenazenergy.com"
+    session_hours: int = 8
+    cookie_secure: bool = True  # set false only for local http testing
+    oidc_tenant_id: str | None = None  # defaults to graph_tenant_id
+    oidc_client_id: str | None = None
+    oidc_client_secret: SecretStr | None = None
+    oidc_admin_role: str = "DMARC.Admin"
+    oidc_viewer_role: str = "DMARC.Viewer"
+    local_login_enabled: bool = False  # break-glass local accounts (create with `dmarc user add`)
+    login_max_failures: int = 5
+    login_lockout_minutes: int = 15
+    static_dir: str | None = None  # built frontend; default: dmarc/static
+
     # --- Worker --------------------------------------------------------------------------
     worker_tick_seconds: int = 30
     purge_hour_utc: int = 3

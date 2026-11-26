@@ -292,3 +292,36 @@ class SourceClassification(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (UniqueConstraint("domain", "source_key", name="uq_source_classification"),)
+
+
+class User(Base):
+    """A person who signed in. Entra ID users are created on first login; roles come from the token."""
+
+    __tablename__ = "app_user"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), unique=True)  # 'entra:<tid>:<oid>' or 'local:<username>'
+    email: Mapped[str | None] = mapped_column(String(255))
+    name: Mapped[str | None] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16))  # admin | viewer
+    is_local: Mapped[bool] = mapped_column(Boolean, default=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    user: Mapped[str | None] = mapped_column(String(255))
+    action: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str | None] = mapped_column(String(512))
+    detail: Mapped[dict] = mapped_column(JSONB, default=dict)
+    ip: Mapped[str | None] = mapped_column(String(64))
+
+    __table_args__ = (Index("ix_audit_log_at", "at"),)
