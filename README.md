@@ -4,8 +4,8 @@ Leest DMARC-aggregate reports (RUA) en forensic/failure reports (RUF) in, slaat 
 PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
 `p=quarantine` / `p=reject` gaan voor tenazenergy.com.
 
-> **Status: fase 2 van 5 — parser, opslag en ophalen van mail via Microsoft Graph.**
-> DNS-controle en verrijking (fase 3), UI met SSO (fase 4) en meldingen (fase 5) volgen.
+> **Status: fase 3 van 5 — parser, opslag, ophalen via Microsoft Graph, DNS-controle,
+> IP-verrijking en aanbevelingen.** De UI met SSO (fase 4) en meldingen (fase 5) volgen.
 
 ## Installatie (Docker-host in Azure)
 
@@ -20,7 +20,11 @@ PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
    ```bash
    docker compose up -d --build
    ```
-4. **Mailbox instellen en testen:**
+4. **Domein toevoegen:**
+   ```bash
+   docker compose run --rm cli domain add tenazenergy.com
+   ```
+5. **Mailbox instellen en testen:**
    ```bash
    docker compose run --rm cli settings set mailbox.address dmarc@tenazenergy.com
    ```
@@ -57,7 +61,81 @@ PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
 - **Retentie:** dagelijks na `DMARC_PURGE_HOUR_UTC` (standaard 03:00 UTC) draait de purge
   volgens de bewaartermijnen.
 
-### Instellingen die je tijdens bedrijf kunt wijzigen
+## DNS-controle, verrijking en aanbevelingen (fase 3)
+
+**DNS-controle** (job `dnscheck`, elk uur) voor elk domein in `dmarc domain list`:
+- **DMARC:**
+  - precies één geldig record; meerdere records is een fout, want dan wordt DMARC genegeerd;
+  - syntax en waarden van `p`, `sp`, `np`, `pct`, `adkim`, `aspf`, `fo`, `rua` en `ruf`;
+  - overerving van het organisatiedomein;
+  - de *external destination verification* als `rua`/`ruf` naar een ander domein wijzen.
+- **SPF:**
+  - precies één record, en de syntax;
+  - het aantal DNS-lookups (maximaal 10) en het aantal void lookups (maximaal 2);
+  - waarschuwingen bij `+all`, `?all`, een ontbrekende `all`, `ptr` en include-loops;
+  - de volledige include-boom wordt opgeslagen, zodat we offline kunnen bepalen of een IP
+    geautoriseerd is.
+- **DKIM:**
+  - de selectors die in de rapporten van de laatste 30 dagen voorkomen, ook op subdomeinen;
+  - de sleutellengte: een waarschuwing onder 2048 bit en een fout onder 1024 bit;
+  - ingetrokken sleutels en `t=y`.
+- **Geparkeerde domeinen** (`dmarc domain add x --parked`): advies voor `v=spf1 -all`,
+  `p=reject` en een null-MX.
+
+**Verrijking** (job `enrich`, elk kwartier):
+- **Reverse DNS**, forward-confirmed. Een PTR telt alleen als de naam terug resolvet naar
+  hetzelfde IP; zo kan een spoofer zich niet "Flowmailer" noemen.
+- **ASN, provider en land** uit **DB-IP Lite**. Die database downloadt de worker zelf en
+  houdt hij maandelijks actueel. De licentie is CC BY 4.0, dus de UI vermeldt "IP data by
+  DB-IP". Liever MaxMind GeoLite2? Zet dan `DMARC_GEOIP_ASN_PATH` en
+  `DMARC_GEOIP_COUNTRY_PATH` op die `.mmdb`-bestanden.
+- **Herkenning van bekende verzenders** via `backend/dmarc/senders.yaml`: Microsoft 365,
+  Google Workspace, Flowmailer, Mailchimp/Mandrill, SendGrid, Mailgun, Amazon SES,
+  Postmark, Brevo, HubSpot, Salesforce MC, Zendesk en Mimecast. De herkenning gaat op
+  PTR, DKIM-domein, bounce-domein en (alleen waar het eenduidig is) ASN.
+- **Eigen verzenders toevoegen:** maak een eigen YAML-bestand en wijs het aan met
+  `DMARC_SENDERS_CATALOG_PATH`. Draai daarna `dmarc enrich --reassign`.
+- **Elke record krijgt een bron:** `sender:<naam>`, `asn:<nummer>` of `ip:<adres>`.
+- **Dagtotalen per domein en bron** (`daily_stat`) voor de trendgrafieken. Die blijven ook
+  na de purge van de details (2 jaar) bewaard.
+
+**Analyse** (`dmarc analyze tenazenergy.com`, straks het dashboard):
+- **Overzicht per bron:** volume, % DMARC-pass, SPF- en DKIM-pass, alignment, gebruikte
+  bounce- en DKIM-domeinen en selectors.
+- **Aanbevelingen in gewone taal.** Voorbeelden:
+  - *"Flowmailer sends ~1,200 mails/week on behalf of tenazenergy.com; 100% fails DMARC —
+    DKIM is signed with flowmailer.net instead of your own domain … → Set up DKIM with your
+    own domain: …"*
+  - *"Add include:spf.protection.outlook.com to the SPF record"*, met een waarschuwing als
+    je al dicht bij de 10 lookups zit.
+  - *"There are 2 DMARC records … Remove all but one"*
+  - onbekende bronnen met veel falende mail, die je zelf als legitiem, onbekend of misbruik
+    markeert.
+- **"Klaar voor p=reject"-indicator** (`ready`, `almost` of `not_ready`). Dat is gebaseerd
+  op zes criteria:
+  - geldige DMARC;
+  - `rua` aanwezig;
+  - geldige SPF;
+  - minimaal 14 dagen data;
+  - ≥ 98% pass voor legitieme mail;
+  - geen legitieme verzender met significante fouten.
+
+  De indicator geeft ook de volgende stap als concrete DNS-waarde:
+  `p=none` → `p=quarantine; pct=25` → `pct=100` → `p=reject`.
+- **Wat telt als legitiem:** bronnen die je als legitiem hebt gemarkeerd, plus
+  ongemarkeerde bronnen die herkend zijn of die meestal slagen. Bronnen die je als misbruik
+  markeert tellen niet mee, en doorgestuurde of mailinglijst-mail ook niet.
+
+Classificeren gaat straks in de UI; nu via de CLI:
+
+```bash
+docker compose run --rm cli classify tenazenergy.com sender:flowmailer legit --note "Facturen"
+```
+
+**Netwerk vanaf de Docker-host:** DNS naar de resolver (standaard de resolver van de host,
+of `DMARC_DNS_NAMESERVERS`) en HTTPS naar `download.db-ip.com`.
+
+## Instellingen die je tijdens bedrijf kunt wijzigen
 
 Het mailboxadres, de mappen, het interval, de batchgrootte en aan/uit staan in de database.
 In fase 4 kun je ze wijzigen in de UI; tot dan via de CLI:
@@ -155,6 +233,11 @@ nooit de productiedatabase.
 | `dmarc fetch` | Eén keer direct mail ophalen, buiten de worker om |
 | `dmarc queue fetch\|purge` | De draaiende worker vragen om een job direct uit te voeren |
 | `dmarc worker` | De worker starten (doet de `worker`-container) |
+| `dmarc dns-check [--domain x --selector s]` | DNS-controle van alle domeinen, of ad hoc van één domein |
+| `dmarc enrich [--reassign]` | PTR/ASN ophalen, bronnen toekennen, dagtotalen herberekenen |
+| `dmarc geoip-update` | DB-IP Lite direct downloaden |
+| `dmarc analyze <domein> [--days n] [--json]` | Bronnen, aanbevelingen en p=reject-indicator |
+| `dmarc classify <domein> <bron> legit\|unknown\|abuse` | Een bron markeren |
 
 ## Configuratie
 
@@ -179,6 +262,13 @@ Secrets staan nooit in de code.
 - **`job_run`**: de geschiedenis van de worker-jobs en de wachtrij voor "nu uitvoeren".
 - **`inbound_message.moved_to` / `move_error`**: naar welke map de mail is verplaatst, of
   waarom dat niet lukte.
+- **`aggregate_record.source_key`**: de toegekende bron: `sender:<x>`, `asn:<n>` of `ip:<a>`.
+- **`ip_info`**: PTR (met een vlag of hij forward-confirmed is), ASN, provider, land en de
+  herkende verzender.
+- **`dns_check`**: de geschiedenis van de DNS-controles, met het volledige resultaat
+  (inclusief de SPF-boom) en de bevindingen.
+- **`daily_stat`**: dagtotalen per domein en bron.
+- **`source_classification`**: legitiem, onbekend of misbruik per domein en bron.
 
 ## Testfixtures
 

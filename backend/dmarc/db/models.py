@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -118,6 +119,8 @@ class AggregateRecord(Base):
     spf_aligned: Mapped[bool] = mapped_column(Boolean)
     dkim_aligned: Mapped[bool] = mapped_column(Boolean)
     dmarc_pass: Mapped[bool] = mapped_column(Boolean)
+    # Filled by the enrichment job: 'sender:<key>', 'asn:<n>' or 'ip:<address>'
+    source_key: Mapped[str | None] = mapped_column(String(64))
 
     report: Mapped[AggregateReport] = relationship(back_populates="records")
     auth_results: Mapped[list[AuthResult]] = relationship(
@@ -128,6 +131,7 @@ class AggregateRecord(Base):
         Index("ix_aggregate_record_report", "report_id"),
         Index("ix_aggregate_record_source_ip", "source_ip"),
         Index("ix_aggregate_record_header_from", "header_from"),
+        Index("ix_aggregate_record_source_key", "source_key"),
     )
 
 
@@ -221,3 +225,70 @@ class JobRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (Index("ix_job_run_job_created", "job", "created_at"),)
+
+
+class DnsCheck(Base):
+    """Result of one DNS check run for one of our domains (history is kept)."""
+
+    __tablename__ = "dns_check"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(253))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict] = mapped_column(JSONB)
+    findings: Mapped[list[dict]] = mapped_column(JSONB)
+    error_count: Mapped[int] = mapped_column(Integer)
+    warning_count: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (Index("ix_dns_check_domain_time", "domain", "checked_at"),)
+
+
+class IpInfo(Base):
+    """Enrichment of a source IP: reverse DNS, ASN, country, recognised sender."""
+
+    __tablename__ = "ip_info"
+
+    ip: Mapped[str] = mapped_column(INET, primary_key=True)
+    ptr: Mapped[str | None] = mapped_column(String(253))
+    ptr_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)  # forward-confirmed rDNS
+    asn: Mapped[int | None] = mapped_column(BigInteger)
+    as_org: Mapped[str | None] = mapped_column(String(255))
+    country: Mapped[str | None] = mapped_column(String(2))
+    sender_key: Mapped[str | None] = mapped_column(String(64))  # from the PTR/ASN catalog match
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DailyStat(Base):
+    """Daily totals per domain and source. Rebuilt from records; kept after records are purged."""
+
+    __tablename__ = "daily_stat"
+
+    domain: Mapped[str] = mapped_column(String(253), primary_key=True)
+    day: Mapped[datetime] = mapped_column(Date, primary_key=True)
+    source_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_name: Mapped[str | None] = mapped_column(String(255))
+    messages: Mapped[int] = mapped_column(BigInteger)
+    dmarc_pass: Mapped[int] = mapped_column(BigInteger)
+    spf_aligned: Mapped[int] = mapped_column(BigInteger)
+    dkim_aligned: Mapped[int] = mapped_column(BigInteger)
+    spf_pass: Mapped[int] = mapped_column(BigInteger)
+    dkim_pass: Mapped[int] = mapped_column(BigInteger)
+    disp_quarantine: Mapped[int] = mapped_column(BigInteger)
+    disp_reject: Mapped[int] = mapped_column(BigInteger)
+    forwarded: Mapped[int] = mapped_column(BigInteger)
+
+
+class SourceClassification(Base):
+    """Admin's verdict about a sending source for one of our domains."""
+
+    __tablename__ = "source_classification"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(253))
+    source_key: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))  # legit | unknown | abuse
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("domain", "source_key", name="uq_source_classification"),)

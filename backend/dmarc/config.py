@@ -47,6 +47,24 @@ class Settings(BaseSettings):
     mailbox_batch_size: int = 200
     mailbox_enabled: bool = True
 
+    # --- DNS checks / enrichment -------------------------------------------------------
+    dns_nameservers: list[str] = []  # empty: system resolver
+    dns_timeout_seconds: float = 5.0
+    dns_check_minutes: int = 60
+    enrich_minutes: int = 15
+    ip_info_max_age_days: int = 30
+    geoip_dir: str = "/data/geoip"
+    geoip_asn_path: str | None = None  # override, e.g. a MaxMind GeoLite2-ASN.mmdb
+    geoip_country_path: str | None = None
+    geoip_auto_download: bool = True  # DB-IP Lite (CC BY 4.0), monthly
+    senders_catalog_path: str | None = None  # extra/overriding sender definitions (YAML)
+
+    # --- Analysis thresholds -------------------------------------------------------------
+    analysis_days: int = 30
+    reject_ready_pass_rate: float = 98.0  # % of legitimate mail that must pass DMARC
+    significant_messages: int = 10  # minimum failing messages before a source is reported
+    min_report_days: int = 14
+
     # --- Worker --------------------------------------------------------------------------
     worker_tick_seconds: int = 30
     purge_hour_utc: int = 3

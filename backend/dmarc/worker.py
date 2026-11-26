@@ -2,6 +2,9 @@
 
 Jobs:
 - ``fetch``: read the mailbox every ``mailbox.poll_minutes`` (setting, default 15).
+- ``enrich``: reverse DNS / ASN for new source IPs, assign sources, rebuild daily stats.
+- ``dnscheck``: check DMARC/SPF/DKIM of our domains every ``DMARC_DNS_CHECK_MINUTES``.
+- ``geoip``: refresh the DB-IP Lite databases when older than 30 days (daily check).
 - ``purge``: once a day after ``DMARC_PURGE_HOUR_UTC`` apply retention periods.
 
 Only one worker is active at a time (PostgreSQL advisory lock); a second instance
@@ -25,12 +28,13 @@ from dmarc.config import Settings, get_settings
 from dmarc.db.models import JobRun
 from dmarc.fetcher import MailboxFactory, run_fetch
 from dmarc.graph import GraphMailbox, GraphNotConfigured, msal_token_provider
+from dmarc.dnscheck.resolver import DnsPythonResolver, Resolver
 from dmarc.storage import purge_expired
 
 log = logging.getLogger(__name__)
 
 WORKER_LOCK_ID = 0x444D41524331  # "DMARC1"
-JOBS = ("fetch", "purge")
+JOBS = ("fetch", "enrich", "dnscheck", "geoip", "purge")
 
 
 def default_mailbox_factory(settings: Settings) -> MailboxFactory:
@@ -52,13 +56,22 @@ class Worker:
         settings: Settings | None = None,
         mailbox_factory: MailboxFactory | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        resolver: Resolver | None = None,
+        geoip_downloader: Callable[[Settings], dict] | None = None,
     ):
         self.engine = engine
         self.settings = settings or get_settings()
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
         self.mailbox_factory = mailbox_factory or default_mailbox_factory(self.settings)
         self.now = now
+        self.resolver = resolver
+        self.geoip_downloader = geoip_downloader
         self.stop_event = threading.Event()
+
+    def _resolver(self) -> Resolver:
+        if self.resolver is None:
+            return DnsPythonResolver(self.settings.dns_nameservers or None, self.settings.dns_timeout_seconds)
+        return self.resolver
 
     # -- scheduling ---------------------------------------------------------------------
 
@@ -75,13 +88,24 @@ class Worker:
         due = []
         with self.sessions() as session:
             cfg = mailbox_config(session, self.settings)
-            last = self._last_run(session, "fetch")
-            if cfg.enabled and (last is None or last.started_at <= now - timedelta(minutes=cfg.poll_minutes)):
+
+            def older_than(job: str, minutes: float) -> bool:
+                last = self._last_run(session, job)
+                return last is None or last.started_at <= now - timedelta(minutes=minutes)
+
+            if cfg.enabled and older_than("fetch", cfg.poll_minutes):
                 due.append("fetch")
+            if older_than("enrich", self.settings.enrich_minutes):
+                due.append("enrich")
+            if older_than("dnscheck", self.settings.dns_check_minutes):
+                due.append("dnscheck")
+            if self.settings.geoip_auto_download and older_than("geoip", 24 * 60):
+                due.append("geoip")
             last = self._last_run(session, "purge")
             if now.hour >= self.settings.purge_hour_utc and (last is None or last.started_at.date() < now.date()):
                 due.append("purge")
-        return due
+        # Run geoip before enrich so a fresh install gets ASN data on the first pass.
+        return sorted(due, key=lambda j: JOBS.index(j) if j != "geoip" else 0.5)
 
     def claim_queued(self) -> list[JobRun]:
         with self.sessions() as session:
@@ -100,12 +124,48 @@ class Worker:
     def _execute(self, job: str) -> dict:
         if job == "fetch":
             return run_fetch(self.sessions, self.mailbox_factory, self.settings).as_dict()
-        if job == "purge":
-            with self.sessions() as session:
+        with self.sessions() as session:
+            if job == "purge":
                 result = purge_expired(session, self.settings, self.now())
-                session.commit()
-                return result
-        raise ValueError(f"unknown job {job!r}")
+            elif job == "enrich":
+                result = self._enrich(session)
+            elif job == "dnscheck":
+                from dmarc.dnscheck.run import run_dns_checks
+
+                result = run_dns_checks(session, self.settings, self._resolver(), self.now())
+            elif job == "geoip":
+                from dmarc.geoip import download_dbip, needs_update
+
+                if not needs_update(self.settings, self.now()):
+                    return {"updated": False}
+                result = (self.geoip_downloader or download_dbip)(self.settings)
+            else:
+                raise ValueError(f"unknown job {job!r}")
+            session.commit()
+            return result
+
+    def _enrich(self, session: Session) -> dict:
+        from dmarc.enrich import assign_sources, enrich_ips
+        from dmarc.geoip import GeoIp
+        from dmarc.senders import load_catalog
+        from dmarc.stats import rebuild_daily, rollup_since
+
+        catalog = load_catalog()
+        last_ok = session.scalars(
+            select(JobRun.started_at).where(JobRun.job == "enrich", JobRun.status == "ok")
+            .order_by(JobRun.started_at.desc()).limit(1)).first()
+        geo = GeoIp.from_settings(self.settings)
+        try:
+            ips = enrich_ips(session, self._resolver(), geo, catalog, self.settings, self.now())
+        finally:
+            geo.close()
+        session.commit()
+        assigned = assign_sources(session, catalog)
+        session.commit()
+        since = rollup_since(session, last_ok, now=self.now())
+        sources = rebuild_daily(session, since, catalog)
+        return {"ips_enriched": ips, "records_assigned": assigned, "rollup_since": since.isoformat(),
+                "rollup_sources": sources, "geoip_available": geo.available}
 
     def run_job(self, job: str, run: JobRun | None = None) -> JobRun:
         with self.sessions() as session:

@@ -14,6 +14,7 @@ x-app: &app
       condition: service_healthy
   volumes:
     - ./secrets:/run/secrets/dmarc:ro   # e.g. graph-cert.pem (DMARC_GRAPH_CERTIFICATE_PATH)
+    - geoip:/data/geoip                 # DB-IP Lite databases, refreshed monthly by the worker
 
 services:
   db:
@@ -73,6 +74,8 @@ services:
     volumes:
       - ./import:/import:ro
       - ./secrets:/run/secrets/dmarc:ro
+      - geoip:/data/geoip
 
 volumes:
   pgdata:
+  geoip:

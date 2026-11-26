@@ -12,10 +12,14 @@ dependencies = [
     "pydantic-settings>=2.2",
     "httpx>=0.27",
     "msal>=1.28",
+    "dnspython>=2.6",
+    "maxminddb>=2.5",
+    "pyyaml>=6",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "mmdb-writer>=0.2"]
 
 [project.scripts]
 dmarc = "dmarc.cli:main"
@@ -26,6 +30,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["dmarc*"]
+
+[tool.setuptools.package-data]
+dmarc = ["senders.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

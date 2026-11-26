@@ -150,10 +150,11 @@ Verwachte uitvoer:
    |---|---|
    | Name | `DMARC-rapportage (portal)` |
    | Supported account types | Single tenant |
-   | Redirect URI | platform **Web**, `https://<interne-hostnaam>/auth/callback` |
+   | Redirect URI | platform **Web**, `https://dmarcportal.tenazenergy.com/auth/callback` |
 
-   > Entra accepteert alleen `http://` voor `localhost`. Voor de interne URL is dus HTTPS
-   > met een geldig certificaat nodig. Zie de vraag onderaan.
+   Bij **Authentication** zet je de *Front-channel logout URL* op
+   `https://dmarcportal.tenazenergy.com/auth/logged-out`. Laat *Access tokens* en *ID tokens*
+   (implicit grant) **uit**: de portal gebruikt de authorization-code flow met PKCE.
 
 2. Ga naar **Certificates & secrets** en maak een **client secret** aan. De waarde wordt
    straks `DMARC_OIDC_CLIENT_SECRET`.
@@ -179,5 +180,21 @@ Verwachte uitvoer:
 Noteer voor fase 4 de volgende gegevens:
 - tenant ID;
 - client ID van de portal-app;
-- client secret;
-- de interne URL.
+- client secret.
+
+### 2.1 Azure Application Gateway
+
+De Application Gateway handelt TLS af met het wildcard-certificaat `*.tenazenergy.com` en
+stuurt het verkeer via HTTP door naar de Docker-host. De api-container komt in fase 4.
+
+| Onderdeel | Instelling |
+|---|---|
+| Listener | HTTPS 443, hostname `dmarcportal.tenazenergy.com`, wildcard-certificaat (bij voorkeur uit Key Vault) |
+| Backend pool | Het privé-IP van de Docker-host |
+| Backend setting | HTTP, poort `8080`, *Override with new host name*: **nee** (de app moet `dmarcportal.tenazenergy.com` als Host zien) |
+| Health probe | `GET /healthz`, verwacht 200 |
+| Rewrite (optioneel) | De App Gateway zet zelf al `X-Forwarded-Proto` en `X-Forwarded-For`; de app vertrouwt die alleen van het subnet van de gateway |
+| Toegang | Alleen een privé-frontend-IP, of een WAF-/NSG-regel die alleen interne netwerken en de VPN toelaat |
+
+DNS: zet een A-record voor `dmarcportal.tenazenergy.com` in de interne zone, of als
+split-horizon, naar het frontend-IP van de gateway.

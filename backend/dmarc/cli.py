@@ -198,6 +198,109 @@ def cmd_graph_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dns_check(args: argparse.Namespace) -> int:
+    from dmarc.dnscheck.resolver import DnsPythonResolver
+    from dmarc.dnscheck.run import check_domain, run_dns_checks
+
+    s = get_settings()
+    resolver = DnsPythonResolver(s.dns_nameservers or None, s.dns_timeout_seconds)
+    if args.domain:  # ad-hoc check without storing (selectors via --selector)
+        result = check_domain(args.domain, resolver, [(args.domain, x) for x in args.selector], args.parked)
+        _print_findings(args.domain, result["findings"])
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        return 1 if any(f["severity"] == "error" for f in result["findings"]) else 0
+
+    from dmarc.db.session import session_scope
+    from dmarc.dnscheck.run import latest_check
+
+    with session_scope() as session:
+        summary = run_dns_checks(session, s, resolver)
+        for domain in summary:
+            _print_findings(domain, latest_check(session, domain).findings)
+    return 0
+
+
+def _print_findings(domain: str, findings: list[dict]) -> None:
+    icon = {"error": "ERROR", "warning": " WARN", "info": " INFO", "ok": "   OK"}
+    print(f"== {domain}")
+    for f in findings:
+        print(f"  [{icon.get(f['severity'], f['severity'])}] {f['check']:<6} {f['message']}")
+        if f.get("fix") and f["severity"] in ("error", "warning"):
+            print(f"           -> {f['fix']}")
+
+
+def cmd_enrich(args: argparse.Namespace) -> int:
+    from dmarc.db.session import get_engine, session_scope
+    from dmarc.worker import Worker
+
+    if args.reassign:
+        from dmarc.enrich import assign_sources
+        from dmarc.senders import load_catalog
+
+        with session_scope() as session:
+            print(f"cleared and reassigned {assign_sources(session, load_catalog(), reassign=True)} records")
+    run = Worker(get_engine()).run_job("enrich")
+    print(json.dumps({"status": run.status, "stats": run.stats, "error": run.error}, indent=2))
+    return 0 if run.status == "ok" else 1
+
+
+def cmd_geoip_update(args: argparse.Namespace) -> int:
+    from dmarc.geoip import download_dbip
+
+    print(json.dumps(download_dbip(get_settings())))
+    return 0
+
+
+def cmd_analyze(args: argparse.Namespace) -> int:
+    from dmarc.analysis import readiness, recommendations, source_overview
+    from dmarc.db.session import session_scope
+
+    if args.days:
+        get_settings().analysis_days = args.days
+    with session_scope() as session:
+        sources = source_overview(session, args.domain)
+        ready = readiness(session, args.domain, sources=sources)
+        recs = recommendations(session, args.domain, sources=sources)
+        if args.json:
+            print(json.dumps({"sources": [x.as_dict() for x in sources], "readiness": ready,
+                              "recommendations": [r.as_dict() for r in recs]}, indent=2, default=str))
+            return 0
+        print(f"== {args.domain}: {ready['total_messages']} messages, legitimate pass rate "
+              f"{ready['pass_rate']}%, policy p={ready['policy'] or '-'} -> {ready['status'].upper()}")
+        for c in ready["criteria"]:
+            print(f"  [{'x' if c['ok'] else ' '}] {c['text']}")
+        print("\nSources:")
+        for x in sources[: args.limit]:
+            d = x.as_dict()
+            print(f"  {d['messages']:>8}  pass {d['dmarc_pass_pct']:>5}%  spf-al {d['spf_aligned_pct']:>5}%  "
+                  f"dkim-al {d['dkim_aligned_pct']:>5}%  {x.status or '-':<7} {x.name}  [{x.key}]")
+        print("\nRecommendations:")
+        for r in recs:
+            print(f"  [{r.severity.upper()}] {r.title}")
+            if r.text and r.text != r.title:
+                print(f"      {r.text}")
+            for a in r.actions:
+                print(f"      -> {a}")
+    return 0
+
+
+def cmd_classify(args: argparse.Namespace) -> int:
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from dmarc.db.models import SourceClassification
+    from dmarc.db.session import session_scope
+
+    with session_scope() as session:
+        stmt = pg_insert(SourceClassification).values(domain=args.domain, source_key=args.source_key,
+                                                       status=args.status, note=args.note, updated_by="cli")
+        session.execute(stmt.on_conflict_do_update(
+            constraint="uq_source_classification",
+            set_={"status": stmt.excluded.status, "note": stmt.excluded.note, "updated_by": "cli"}))
+    print(f"{args.source_key} for {args.domain}: {args.status}")
+    return 0
+
+
 def _iter_files(paths: list[str]):
     for p in map(Path, paths):
         if p.is_dir():
@@ -243,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_fetch)
 
     p = sub.add_parser("queue", help="ask the running worker to run a job now")
-    p.add_argument("job", choices=["fetch", "purge"])
+    p.add_argument("job", choices=["fetch", "enrich", "dnscheck", "geoip", "purge"])
     p.set_defaults(func=cmd_queue)
 
     p = sub.add_parser("worker", help="run the background worker (scheduled fetch + purge)")
@@ -253,6 +356,34 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--mailbox", help="mailbox address to test (default: configured one)")
     p.add_argument("--other-mailbox", help="a mailbox the app must NOT be able to read, to verify the restriction")
     p.set_defaults(func=cmd_graph_check)
+
+    p = sub.add_parser("dns-check", help="check DMARC/SPF/DKIM of all monitored domains (or one, ad hoc)")
+    p.add_argument("--domain", help="check this domain without storing the result")
+    p.add_argument("--selector", action="append", default=[], help="DKIM selector to check (with --domain)")
+    p.add_argument("--parked", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_dns_check)
+
+    p = sub.add_parser("enrich", help="reverse DNS/ASN for source IPs, assign sources, rebuild daily stats")
+    p.add_argument("--reassign", action="store_true", help="re-identify all sources (after a catalogue change)")
+    p.set_defaults(func=cmd_enrich)
+
+    p = sub.add_parser("geoip-update", help="download the DB-IP Lite ASN and country databases")
+    p.set_defaults(func=cmd_geoip_update)
+
+    p = sub.add_parser("analyze", help="sources, recommendations and p=reject readiness for a domain")
+    p.add_argument("domain")
+    p.add_argument("--days", type=int)
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_analyze)
+
+    p = sub.add_parser("classify", help="mark a source as legit, unknown or abuse")
+    p.add_argument("domain")
+    p.add_argument("source_key", help="e.g. sender:sendgrid, asn:8075 or ip:192.0.2.1")
+    p.add_argument("status", choices=["legit", "unknown", "abuse"])
+    p.add_argument("--note")
+    p.set_defaults(func=cmd_classify)
 
     args = parser.parse_args(argv)
     return args.func(args)

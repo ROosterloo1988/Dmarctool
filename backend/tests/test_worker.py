@@ -23,8 +23,14 @@ def clock():
 
 
 @pytest.fixture
-def worker(engine, session, settings, mailbox_factory, clock):
-    return Worker(engine, settings, mailbox_factory, now=clock)
+def worker(engine, session, settings, mailbox_factory, clock, fake_dns, geoip_files):
+    settings.geoip_dir = str(geoip_files)
+    settings.geoip_auto_download = False
+    return Worker(engine, settings, mailbox_factory, now=clock, resolver=fake_dns)
+
+
+def jobs(runs, only=("fetch", "purge")):
+    return sorted(r.job for r in runs if r.job in only)
 
 
 def test_fetch_skipped_without_mailbox(worker, session):
@@ -39,19 +45,19 @@ def test_schedule(worker, session, clock, fake_graph):
     fake_graph.add_message(fixture_bytes("rua", "google.eml"))
 
     first = worker.tick()
-    assert sorted(r.job for r in first) == ["fetch", "purge"]
+    assert [r.job for r in first] == ["fetch", "enrich", "dnscheck", "purge"]
     fetch = next(r for r in first if r.job == "fetch")
     assert fetch.status == "ok" and fetch.stats["processed"] == 1
 
     clock.t += timedelta(minutes=10)
-    assert worker.tick() == []  # neither due yet
+    assert worker.tick() == []  # nothing due yet
     clock.t += timedelta(minutes=5)
-    assert [r.job for r in worker.tick()] == ["fetch"]  # 15 minutes passed
+    assert [r.job for r in worker.tick()] == ["fetch", "enrich"]  # 15 minutes passed
 
     clock.t = clock.t.replace(hour=1) + timedelta(days=1)
-    assert [r.job for r in worker.tick()] == ["fetch"]  # purge waits until 03:00 UTC
+    assert jobs(worker.tick()) == ["fetch"]  # purge waits until 03:00 UTC
     clock.t = clock.t.replace(hour=3, minute=30)
-    assert sorted(r.job for r in worker.tick()) == ["fetch", "purge"]
+    assert jobs(worker.tick()) == ["fetch", "purge"]
 
 
 def test_poll_interval_and_disable_from_settings(worker, session, clock):
@@ -60,12 +66,12 @@ def test_poll_interval_and_disable_from_settings(worker, session, clock):
     session.commit()
     worker.tick()
     clock.t += timedelta(minutes=30)
-    assert worker.due_jobs() == []
+    assert "fetch" not in worker.due_jobs()
     clock.t += timedelta(minutes=30)
-    assert worker.due_jobs() == ["fetch"]
+    assert "fetch" in worker.due_jobs()
     set_value(session, "mailbox.enabled", False)
     session.commit()
-    assert worker.due_jobs() == []
+    assert "fetch" not in worker.due_jobs()
 
 
 def test_queued_job_runs_immediately(worker, session, clock):
@@ -76,7 +82,7 @@ def test_queued_job_runs_immediately(worker, session, clock):
     run = queue_job(session, "fetch", requested_by="admin@example.com")
     assert queue_job(session, "fetch").id == run.id  # no double queueing
     session.commit()
-    [done] = worker.tick()
+    [done] = worker.tick()  # only the queued fetch; enrich/dnscheck ran a minute ago
     assert done.id == run.id and done.status == "ok" and done.requested_by == "admin@example.com"
 
 
@@ -94,3 +100,31 @@ def test_recover_stale(worker, session):
     worker.recover_stale()
     session.expire_all()
     assert session.scalars(select(JobRun)).one().status == "error"
+
+
+def test_enrich_and_dnscheck_jobs(worker, session, settings):
+    from dmarc.db.models import DailyStat, DnsCheck, Domain
+    from dmarc.storage import ingest_email
+
+    ingest_email(session, fixture_bytes("rua", "google.eml"), settings=settings)
+    session.add(Domain(name="example.com"))
+    session.commit()
+    enrich = worker.run_job("enrich")
+    assert enrich.status == "ok", enrich.error
+    assert enrich.stats["ips_enriched"] == 3 and enrich.stats["records_assigned"] == 3
+    assert enrich.stats["geoip_available"] is True and enrich.stats["rollup_since"] == "2025-11-24"
+    assert session.query(DailyStat).count() == 3
+    dns = worker.run_job("dnscheck")
+    # Report is older than 30 days at the worker clock, so no selectors to check yet.
+    assert dns.status == "ok" and dns.stats == {"example.com": {"error": 0, "warning": 0}}
+    assert session.query(DnsCheck).count() == 1
+
+
+def test_geoip_job(engine, session, settings, mailbox_factory, clock, tmp_path):
+    settings.geoip_dir = str(tmp_path)
+    calls = []
+    w = Worker(engine, settings, mailbox_factory, now=clock, geoip_downloader=lambda s: calls.append(s) or {"asn": "2026-01"})
+    assert "geoip" in w.due_jobs()
+    run = w.run_job("geoip")
+    assert run.status == "ok" and run.stats == {"asn": "2026-01"} and len(calls) == 1
+    assert "geoip" not in w.due_jobs()  # checked again tomorrow

@@ -12,6 +12,7 @@ RUN pip install '.[dev]'
 COPY alembic.ini ./
 COPY tests ./tests
 
+RUN mkdir -p /data/geoip && chown app /data/geoip
 USER app
 ENTRYPOINT ["dmarc"]
 CMD ["--help"]
