@@ -4,8 +4,8 @@ Leest DMARC-aggregate reports (RUA) en forensic/failure reports (RUF) in, slaat 
 PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
 `p=quarantine` / `p=reject` gaan voor tenazenergy.com.
 
-> **Status: fase 4 van 5 — webinterface met SSO is klaar.** Meldingen per mail (fase 5)
-> volgen.
+> **Status: alle 5 fases zijn gebouwd** — parser, ophalen via Graph, DNS-controle en
+> verrijking, webinterface met SSO en meldingen per mail.
 
 ## Installatie (Docker-host in Azure)
 
@@ -41,7 +41,9 @@ PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
    Microsoft**. Daarna, onder **Settings**:
    - domein `tenazenergy.com` toevoegen;
    - het mailboxadres instellen.
-6. **Mailbox testen:**
+6. **Meldingen instellen:** ga in de UI naar **Settings → Notifications**, vul daar de
+   ontvangers in en kies **Send test mail**.
+7. **Mailbox testen:**
    ```bash
    docker compose run --rm cli graph-check --other-mailbox iemand@tenazenergy.com
    ```
@@ -103,6 +105,33 @@ poort 8080.
 cd frontend && npm install && npm run dev
 ```
 
+## Meldingen per mail (fase 5)
+
+De job `alerts` draait elk kwartier en verstuurt de mail via Graph vanuit de DMARC-mailbox
+(`Mail.Send`).
+
+| Wat | Wanneer |
+|---|---|
+| Nieuwe DNS-**fout**, bijvoorbeeld een tweede DMARC-record, SPF met meer dan 10 lookups of een te korte DKIM-sleutel | **Direct** |
+| Nieuwe DNS-waarschuwing | Dagelijkse samenvatting |
+| Opgelost DNS-probleem | Dagelijkse samenvatting |
+| Nieuwe onbekende verzender. Voorwaarden: eerste keer gezien in de laatste 7 dagen, niet herkend en niet geclassificeerd, en minimaal *N* berichten (standaard 50) | Dagelijkse samenvatting |
+| Daling van het DMARC-pass-percentage: de laatste 7 dagen tegenover de 7 dagen ervoor, met ≥ *X* procentpunt (standaard 5). Bronnen die als misbruik zijn gemarkeerd tellen niet mee | Dagelijkse samenvatting, hooguit wekelijks |
+
+**Instellen:** onder Settings → Notifications in de UI stel je in:
+- de ontvangers;
+- aan/uit;
+- het uur van de samenvatting (standaard 06:00 UTC);
+- de drempels.
+
+Daar staat ook de knop **Send test mail** en de lijst met recent verstuurde meldingen.
+
+**Hoe het werkt:**
+- Elk probleem wordt één keer gemeld, tot het is opgelost (tabel `alert_state`).
+- Mislukt het versturen, dan wordt het de volgende run opnieuw geprobeerd.
+- Staan meldingen uit, dan wordt er wel gedetecteerd. Er gaat dus niets verloren als je ze
+  later aanzet.
+
 ## Ophalen van mail (fase 2)
 
 - **Worker:** de `worker`-container leest elke `mailbox.poll_minutes` minuten (standaard
@@ -121,7 +150,7 @@ cd frontend && npm install && npm run dev
 - **Één actieve worker:** er draait altijd maar één actieve worker, via een PostgreSQL
   advisory lock. Een tweede instantie wacht als standby.
 - **Runs in `job_run`:** elke run wordt vastgelegd in `job_run`, met tellingen of een
-  foutmelding, voor de UI. `dmarc queue fetch` vraagt de worker om direct te draaien; dat
+  foutmelding, voor de UI. In de UI start je een job direct met "Run now" (Mail processing); op de CLI met `dmarc queue fetch`. Dat
   wordt straks de knop "Nu ophalen" in de UI.
 - **Retentie:** dagelijks na `DMARC_PURGE_HOUR_UTC` (standaard 03:00 UTC) draait de purge
   volgens de bewaartermijnen.
@@ -296,7 +325,7 @@ nooit de productiedatabase.
 | `dmarc settings [set\|reset] [key] [value]` | Instellingen tonen of wijzigen (mailbox, mappen, interval) |
 | `dmarc graph-check [--other-mailbox x]` | App-registratie en mailboxrechten stap voor stap controleren |
 | `dmarc fetch` | Eén keer direct mail ophalen, buiten de worker om |
-| `dmarc queue fetch\|purge` | De draaiende worker vragen om een job direct uit te voeren |
+| `dmarc queue fetch\|enrich\|dnscheck\|geoip\|purge\|alerts` | De draaiende worker vragen om een job direct uit te voeren |
 | `dmarc worker` | De worker starten (doet de `worker`-container) |
 | `dmarc dns-check [--domain x --selector s]` | DNS-controle van alle domeinen, of ad hoc van één domein |
 | `dmarc enrich [--reassign]` | PTR/ASN ophalen, bronnen toekennen, dagtotalen herberekenen |
@@ -340,6 +369,8 @@ Secrets staan nooit in de code.
   noodaccounts.
 - **`audit_log`**: wie wat wanneer deed: logins, mislukte logins, classificaties,
   instellingen, exports en het inzien van RUF.
+- **`alert_state`**: welke problemen al gemeld zijn en of ze opgelost zijn.
+- **`alert_event`**: de meldingen en hun verzendstatus.
 
 ## Testfixtures
 

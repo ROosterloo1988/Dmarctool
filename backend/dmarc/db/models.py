@@ -325,3 +325,40 @@ class AuditLog(Base):
     ip: Mapped[str | None] = mapped_column(String(64))
 
     __table_args__ = (Index("ix_audit_log_at", "at"),)
+
+
+class AlertState(Base):
+    """Remembers what we already notified about, so every problem is reported once (until resolved)."""
+
+    __tablename__ = "alert_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(253))
+    key: Mapped[str] = mapped_column(String(255))  # e.g. 'dns:spf.too_many_lookups', 'source:asn:64500', 'passrate'
+    status: Mapped[str] = mapped_column(String(16))  # open | resolved
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (UniqueConstraint("domain", "key", name="uq_alert_state"),)
+
+
+class AlertEvent(Base):
+    """A notification to send (immediately or in the daily digest) and its delivery status."""
+
+    __tablename__ = "alert_event"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    domain: Mapped[str] = mapped_column(String(253))
+    kind: Mapped[str] = mapped_column(String(32))  # dns | dns_resolved | new_source | pass_drop | test
+    severity: Mapped[str] = mapped_column(String(16))  # critical | warning | info
+    key: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(Text)
+    text: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(512))
+    immediate: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    send_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (Index("ix_alert_event_unsent", "sent_at", "created_at"),)

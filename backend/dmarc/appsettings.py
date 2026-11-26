@@ -41,6 +41,35 @@ def _folder(v: Any) -> str:
     return v
 
 
+def _email_list(v: Any) -> list[str]:
+    if v is None or v == "":
+        return []
+    items = v if isinstance(v, list) else re.split(r"[,;\s]+", str(v))
+    out: list[str] = []
+    for item in items:
+        item = str(item).strip()
+        if not item:
+            continue
+        addr = _email(item)
+        if addr and addr not in out:
+            out.append(addr)
+    if len(out) > 20:
+        raise SettingError("at most 20 recipients")
+    return out
+
+
+def _float_range(lo: float, hi: float) -> Callable[[Any], float]:
+    def check(v: Any) -> float:
+        try:
+            f = float(v)
+        except (TypeError, ValueError) as exc:
+            raise SettingError(f"not a number: {v!r}") from exc
+        if not lo <= f <= hi:
+            raise SettingError(f"must be between {lo:g} and {hi:g}")
+        return f
+    return check
+
+
 def _int_range(lo: int, hi: int) -> Callable[[Any], int]:
     def check(v: Any) -> int:
         try:
@@ -82,6 +111,14 @@ DEFINITIONS: dict[str, SettingDef] = {
         SettingDef("mailbox.poll_minutes", "mailbox_poll_minutes", _int_range(1, 1440), "Fetch interval in minutes"),
         SettingDef("mailbox.batch_size", "mailbox_batch_size", _int_range(1, 1000), "Maximum messages per run"),
         SettingDef("mailbox.enabled", "mailbox_enabled", _bool, "Fetch mail automatically"),
+        SettingDef("notify.enabled", "notify_enabled", _bool, "Send e-mail notifications"),
+        SettingDef("notify.recipients", "notify_recipients", _email_list, "Recipients of notifications"),
+        SettingDef("notify.digest_hour_utc", "notify_digest_hour_utc", _int_range(0, 23),
+                   "Hour (UTC) at which the daily summary is sent"),
+        SettingDef("notify.new_source_min_messages", "notify_new_source_min_messages", _int_range(1, 10_000_000),
+                   "Report a new unknown sender from this many messages"),
+        SettingDef("notify.pass_drop_points", "notify_pass_drop_points", _float_range(0.5, 100),
+                   "Report a drop of the DMARC pass rate of at least this many percentage points"),
     ]
 }
 
@@ -153,4 +190,24 @@ def mailbox_config(session: Session, settings: Settings | None = None) -> Mailbo
         poll_minutes=int(v["mailbox.poll_minutes"]),
         batch_size=int(v["mailbox.batch_size"]),
         enabled=bool(v["mailbox.enabled"]),
+    )
+
+
+@dataclass(frozen=True)
+class NotifyConfig:
+    enabled: bool
+    recipients: list[str]
+    digest_hour_utc: int
+    new_source_min_messages: int
+    pass_drop_points: float
+
+
+def notify_config(session: Session, settings: Settings | None = None) -> NotifyConfig:
+    v = {k: e["value"] for k, e in get_all(session, settings).items()}
+    return NotifyConfig(
+        enabled=bool(v["notify.enabled"]),
+        recipients=list(v["notify.recipients"] or []),
+        digest_hour_utc=int(v["notify.digest_hour_utc"]),
+        new_source_min_messages=int(v["notify.new_source_min_messages"]),
+        pass_drop_points=float(v["notify.pass_drop_points"]),
     )

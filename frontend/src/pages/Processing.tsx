@@ -14,7 +14,7 @@ interface Job { id: number; job: string; status: string; requested_by: string | 
 
 const STATUS_TONE: Record<string, "good" | "neutral" | "warning" | "critical" | "info"> =
   { processed: "good", duplicate: "neutral", partial: "warning", failed: "critical", ok: "good", error: "critical", skipped: "warning", queued: "info", running: "info" };
-const JOB_LABEL: Record<string, string> = { fetch: "Fetch mail", enrich: "Enrich IPs & statistics", dnscheck: "DNS check", geoip: "Update IP database", purge: "Retention clean-up" };
+const JOB_LABEL: Record<string, string> = { fetch: "Fetch mail", enrich: "Enrich IPs & statistics", dnscheck: "DNS check", geoip: "Update IP database", purge: "Retention clean-up", alerts: "Notifications" };
 
 export function Processing() {
   const { isAdmin } = useApp();

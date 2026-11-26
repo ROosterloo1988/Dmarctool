@@ -6,6 +6,7 @@ Jobs:
 - ``dnscheck``: check DMARC/SPF/DKIM of our domains every ``DMARC_DNS_CHECK_MINUTES``.
 - ``geoip``: refresh the DB-IP Lite databases when older than 30 days (daily check).
 - ``purge``: once a day after ``DMARC_PURGE_HOUR_UTC`` apply retention periods.
+- ``alerts``: detect problems and send e-mail notifications (immediate + daily digest).
 
 Only one worker is active at a time (PostgreSQL advisory lock); a second instance
 waits as a hot standby. Every run is recorded in ``job_run`` for the UI.
@@ -34,7 +35,7 @@ from dmarc.storage import purge_expired
 log = logging.getLogger(__name__)
 
 WORKER_LOCK_ID = 0x444D41524331  # "DMARC1"
-JOBS = ("fetch", "enrich", "dnscheck", "geoip", "purge")
+JOBS = ("fetch", "enrich", "dnscheck", "geoip", "purge", "alerts")
 
 
 def default_mailbox_factory(settings: Settings) -> MailboxFactory:
@@ -101,6 +102,8 @@ class Worker:
                 due.append("dnscheck")
             if self.settings.geoip_auto_download and older_than("geoip", 24 * 60):
                 due.append("geoip")
+            if older_than("alerts", self.settings.notify_minutes):
+                due.append("alerts")
             last = self._last_run(session, "purge")
             if now.hour >= self.settings.purge_hour_utc and (last is None or last.started_at.date() < now.date()):
                 due.append("purge")
@@ -133,6 +136,10 @@ class Worker:
                 from dmarc.dnscheck.run import run_dns_checks
 
                 result = run_dns_checks(session, self.settings, self._resolver(), self.now())
+            elif job == "alerts":
+                from dmarc.alerts import run_alerts
+
+                result = run_alerts(session, self.mailbox_factory, self.settings, self.now())
             elif job == "geoip":
                 from dmarc.geoip import download_dbip, needs_update
 

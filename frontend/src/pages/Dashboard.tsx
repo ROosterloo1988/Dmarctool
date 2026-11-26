@@ -7,13 +7,15 @@ import { TrendChart } from "../components/TrendChart";
 import { Card, Empty, ErrorBox, Kpi, Loading, PctBar, Pill, RecommendationList } from "../components/ui";
 import { useApp } from "../context";
 import { ago, num, pct } from "../format";
-import type { Dashboard as D } from "../types";
+import type { Dashboard as D, SettingEntry } from "../types";
 
 const RANGES = [7, 30, 90, 365];
 
 export function Dashboard() {
   const { domain, domains, isAdmin } = useApp();
   const [days, setDays] = useState(30);
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => api<Record<string, SettingEntry>>("/api/settings"), enabled: isAdmin });
+  const noRecipients = isAdmin && settings.data && !(settings.data["notify.recipients"]?.value as string[] | undefined)?.length;
   const q = useQuery({
     queryKey: ["dashboard", domain, days],
     queryFn: () => api<D>(`/api/domains/${domain}/dashboard?days=${days}`),
@@ -44,6 +46,12 @@ export function Dashboard() {
           {RANGES.map((r) => <button key={r} aria-pressed={days === r} onClick={() => setDays(r)}>{r === 365 ? "1 year" : `${r} days`}</button>)}
         </div>
       </div>
+
+      {noRecipients && (
+        <div className="alert alert-info">
+          E-mail notifications are not set up yet. <Link to="/settings">Add recipients under Settings → Notifications</Link>.
+        </div>
+      )}
 
       <div className="grid grid-kpi">
         <Kpi label="Messages reported" value={num(d.totals.messages)}

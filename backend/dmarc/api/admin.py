@@ -244,3 +244,37 @@ def audit_log(page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=5
     rows = db.scalars(select(a).order_by(a.at.desc(), a.id.desc()).offset((page - 1) * page_size).limit(page_size))
     return {"total": total, "items": [{"id": r.id, "at": r.at, "user": r.user, "action": r.action, "target": r.target,
                                        "detail": r.detail, "ip": r.ip} for r in rows]}
+
+
+# --------------------------------------------------------------------------------------
+# Notifications
+# --------------------------------------------------------------------------------------
+
+@router.get("/notifications", dependencies=[Depends(require_admin)])
+def notifications(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)):
+    e = m.AlertEvent
+    rows = db.scalars(select(e).order_by(e.created_at.desc(), e.id.desc()).limit(limit))
+    open_problems = db.scalar(select(func.count()).select_from(m.AlertState).where(
+        m.AlertState.status == "open", m.AlertState.domain != "*")) or 0
+    return {"open_problems": open_problems, "items": [
+        {"id": r.id, "created_at": r.created_at, "domain": r.domain, "kind": r.kind, "severity": r.severity,
+         "title": r.title, "immediate": r.immediate, "sent_at": r.sent_at, "send_error": r.send_error} for r in rows]}
+
+
+@router.post("/notifications/test")
+def notifications_test(request: Request, db: Session = Depends(get_db), user: CurrentUser = Depends(require_admin)):
+    from dmarc.alerts import send_test
+    from dmarc.graph import GraphError
+
+    factory = getattr(request.app.state, "mailbox_factory", None)
+    if factory is None:
+        from dmarc.worker import default_mailbox_factory
+
+        factory = request.app.state.mailbox_factory = default_mailbox_factory(request.app.state.settings)
+    try:
+        recipients = send_test(db, factory, request.app.state.settings, requested_by=user.label)
+    except (ValueError, GraphError) as exc:
+        db.rollback()
+        raise HTTPException(422, f"test mail not sent: {exc}") from None
+    audit(db, request, user.label, "notify_test", ", ".join(recipients))
+    return {"sent_to": recipients}

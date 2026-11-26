@@ -45,14 +45,14 @@ def test_schedule(worker, session, clock, fake_graph):
     fake_graph.add_message(fixture_bytes("rua", "google.eml"))
 
     first = worker.tick()
-    assert [r.job for r in first] == ["fetch", "enrich", "dnscheck", "purge"]
+    assert [r.job for r in first] == ["fetch", "enrich", "dnscheck", "purge", "alerts"]
     fetch = next(r for r in first if r.job == "fetch")
     assert fetch.status == "ok" and fetch.stats["processed"] == 1
 
     clock.t += timedelta(minutes=10)
     assert worker.tick() == []  # nothing due yet
     clock.t += timedelta(minutes=5)
-    assert [r.job for r in worker.tick()] == ["fetch", "enrich"]  # 15 minutes passed
+    assert [r.job for r in worker.tick()] == ["fetch", "enrich", "alerts"]  # 15 minutes passed
 
     clock.t = clock.t.replace(hour=1) + timedelta(days=1)
     assert jobs(worker.tick()) == ["fetch"]  # purge waits until 03:00 UTC

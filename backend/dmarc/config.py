@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     login_lockout_minutes: int = 15
     static_dir: str | None = None  # built frontend; default: dmarc/static
 
+    # --- Notifications (defaults; editable in the UI under Settings > Notifications) -----
+    notify_enabled: bool = True
+    notify_recipients: list[str] = []
+    notify_digest_hour_utc: int = 6
+    notify_new_source_min_messages: int = 50
+    notify_pass_drop_points: float = 5.0
+    notify_minutes: int = 15
+
     # --- Worker --------------------------------------------------------------------------
     worker_tick_seconds: int = 30
     purge_hour_utc: int = 3

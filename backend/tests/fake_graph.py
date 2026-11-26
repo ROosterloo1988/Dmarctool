@@ -33,6 +33,8 @@ class FakeGraph:
     throttle_next: int = 0  # number of upcoming requests answered with 429
     deny: bool = False
     requests: list[httpx.Request] = field(default_factory=list)
+    sent: list[dict] = field(default_factory=list)
+    fail_send: bool = False
     _ids: itertools.count = field(default_factory=lambda: itertools.count(1))
 
     def __post_init__(self):
@@ -132,6 +134,9 @@ class FakeGraph:
             return httpx.Response(201, json={"id": msg.id})
 
         if path == "/sendMail" and request.method == "POST":
+            if self.fail_send:
+                return _err(403, "ErrorAccessDenied", "Access is denied.")
+            self.sent.append(json.loads(request.content))
             return httpx.Response(202)
 
         return _err(400, "BadRequest", f"unhandled {request.method} {path}")

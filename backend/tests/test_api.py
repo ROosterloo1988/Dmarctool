@@ -398,3 +398,18 @@ def test_users_and_audit(admin, viewer, session):
     assert admin.patch(f"/api/users/{entra['id']}", json={"active": False}).json()["active"] is False
     log = admin.get("/api/audit").json()
     assert log["total"] >= 3 and {"login", "user_update"} <= {x["action"] for x in log["items"]}
+
+
+def test_notifications_api(app, admin, viewer, session, mailbox_factory, fake_graph):
+    assert viewer.post("/api/notifications/test").status_code == 403
+    r = admin.post("/api/notifications/test")
+    assert r.status_code == 422 and "no recipients" in r.json()["detail"]
+    admin.put("/api/settings/notify.recipients", json={"value": "it@example.com, ciso@example.com"})
+    admin.put("/api/settings/mailbox.address", json={"value": "dmarc@example.com"})
+    app.state.mailbox_factory = mailbox_factory
+    r = admin.post("/api/notifications/test")
+    assert r.json() == {"sent_to": ["it@example.com", "ciso@example.com"]}
+    assert fake_graph.sent[0]["message"]["subject"] == "Test notification from the DMARC portal"
+    items = admin.get("/api/notifications").json()["items"]
+    assert items[0]["kind"] == "test" and items[0]["sent_at"]
+    assert viewer.get("/api/notifications").status_code == 403
