@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,29 @@ class Settings(BaseSettings):
     # --- Aggregate (RUA) retention -------------------------------------------------------
     rua_store_raw_xml: bool = True
     rua_retention_days: int = 730
+
+    # --- Microsoft Graph (secrets: environment only, never in the database) --------------
+    graph_tenant_id: str | None = None
+    graph_client_id: str | None = None
+    graph_client_secret: SecretStr | None = None
+    graph_certificate_path: str | None = None  # PEM file with private key + certificate
+    graph_certificate_password: SecretStr | None = None
+    graph_authority_host: str = "https://login.microsoftonline.com"
+    graph_base_url: str = "https://graph.microsoft.com/v1.0"
+    graph_timeout_seconds: float = 60.0
+
+    # --- Mailbox defaults (can be overridden in the management UI / `dmarc settings`) ----
+    mailbox_address: str | None = None
+    mailbox_source_folder: str = "Inbox"
+    mailbox_processed_folder: str = "Verwerkt"
+    mailbox_failed_folder: str = "Fout"
+    mailbox_poll_minutes: int = 15
+    mailbox_batch_size: int = 200
+    mailbox_enabled: bool = True
+
+    # --- Worker --------------------------------------------------------------------------
+    worker_tick_seconds: int = 30
+    purge_hour_utc: int = 3
 
 
 @lru_cache

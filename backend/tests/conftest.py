@@ -46,9 +46,38 @@ def session(engine):
 
     with engine.begin() as conn:
         conn.execute(text(
-            "TRUNCATE auth_result, aggregate_record, aggregate_report, forensic_report, inbound_message, domain "
+            "TRUNCATE auth_result, aggregate_record, aggregate_report, forensic_report, inbound_message, domain, "
+            "app_setting, job_run "
             "RESTART IDENTITY CASCADE"
         ))
     with Session(engine) as s:
         yield s
         s.rollback()
+
+
+@pytest.fixture
+def sessions(engine, session):
+    """A sessionmaker on the (freshly truncated) test database, for code that opens its own sessions."""
+    from sqlalchemy.orm import sessionmaker
+
+    return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def fake_graph():
+    from tests.fake_graph import FakeGraph
+
+    return FakeGraph()
+
+
+@pytest.fixture
+def mailbox_factory(fake_graph, settings):
+    import httpx
+
+    from dmarc.graph import GraphMailbox
+
+    def factory(address):
+        return GraphMailbox(address, lambda: "test-token", settings,
+                            http=httpx.Client(transport=fake_graph.transport()), sleep=lambda s: None)
+
+    return factory

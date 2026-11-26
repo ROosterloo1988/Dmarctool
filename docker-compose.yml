@@ -1,6 +1,19 @@
-# Phase 1: database + CLI container (import / parse / migrate).
-# Later phases add the 'api', 'worker' and 'backup' services.
+# DMARC reporting: database, worker (mail fetch + retention) and daily backups.
+# Phase 4 adds the 'api' service (web UI with Entra ID SSO).
 name: dmarc
+
+x-app: &app
+  build: ./backend
+  image: dmarc-app:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DMARC_DATABASE_URL: postgresql+psycopg://dmarc:${POSTGRES_PASSWORD}@db:5432/dmarc
+  depends_on:
+    db:
+      condition: service_healthy
+  volumes:
+    - ./secrets:/run/secrets/dmarc:ro   # e.g. graph-cert.pem (DMARC_GRAPH_CERTIFICATE_PATH)
 
 services:
   db:
@@ -18,22 +31,48 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    # Only exposed on localhost, for running the tests from the host.
+    # Only on localhost (for running tests from the host). Remove in production if unused.
     ports:
       - "127.0.0.1:5432:5432"
 
-  cli:
-    build: ./backend
-    profiles: ["tools"]
-    env_file: .env
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["migrate"]
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh"]
     environment:
-      DMARC_DATABASE_URL: postgresql+psycopg://dmarc:${POSTGRES_PASSWORD}@db:5432/dmarc
-      DMARC_TEST_DATABASE_URL: postgresql+psycopg://dmarc:${POSTGRES_PASSWORD}@db:5432/dmarc_test
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-2}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./docker/backup/backup.sh:/backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
     depends_on:
       db:
         condition: service_healthy
+
+  # One-off commands: docker compose run --rm cli <command>
+  cli:
+    <<: *app
+    restart: "no"
+    profiles: ["tools"]
+    environment:
+      DMARC_DATABASE_URL: postgresql+psycopg://dmarc:${POSTGRES_PASSWORD}@db:5432/dmarc
+      DMARC_TEST_DATABASE_URL: postgresql+psycopg://dmarc:${POSTGRES_PASSWORD}@db:5432/dmarc_test
     volumes:
       - ./import:/import:ro
+      - ./secrets:/run/secrets/dmarc:ro
 
 volumes:
   pgdata:

@@ -56,6 +56,8 @@ class InboundMessage(Base):
     reports_new: Mapped[int] = mapped_column(Integer, default=0)
     reports_duplicate: Mapped[int] = mapped_column(Integer, default=0)
     errors: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    moved_to: Mapped[str | None] = mapped_column(String(255))  # mailbox folder after processing
+    move_error: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (Index("ix_inbound_message_status", "status", "processed_at"),)
 
@@ -190,3 +192,32 @@ class ForensicReport(Base):
         Index("ix_forensic_report_domain_arrival", "reported_domain", "arrival_date"),
         Index("ix_forensic_report_expires", "expires_at"),
     )
+
+
+class AppSetting(Base):
+    """Runtime settings editable from the management UI (never secrets)."""
+
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[object] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+
+
+class JobRun(Base):
+    """History of background jobs; a row with status 'queued' asks the worker to run a job now."""
+
+    __tablename__ = "job_run"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    job: Mapped[str] = mapped_column(String(32))  # 'fetch' | 'purge' | ...
+    status: Mapped[str] = mapped_column(String(16))  # queued | running | ok | error | skipped
+    requested_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stats: Mapped[dict] = mapped_column(JSONB, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (Index("ix_job_run_job_created", "job", "created_at"),)
