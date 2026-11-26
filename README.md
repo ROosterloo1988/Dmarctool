@@ -150,8 +150,8 @@ Daar staat ook de knop **Send test mail** en de lijst met recent verstuurde meld
 - **Één actieve worker:** er draait altijd maar één actieve worker, via een PostgreSQL
   advisory lock. Een tweede instantie wacht als standby.
 - **Runs in `job_run`:** elke run wordt vastgelegd in `job_run`, met tellingen of een
-  foutmelding, voor de UI. In de UI start je een job direct met "Run now" (Mail processing); op de CLI met `dmarc queue fetch`. Dat
-  wordt straks de knop "Nu ophalen" in de UI.
+  foutmelding. In de UI start je een job direct met "Run now" (Mail processing); op de CLI
+  met `dmarc queue fetch`.
 - **Retentie:** dagelijks na `DMARC_PURGE_HOUR_UTC` (standaard 03:00 UTC) draait de purge
   volgens de bewaartermijnen.
 
