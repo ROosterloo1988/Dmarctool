@@ -54,6 +54,7 @@ function Detail({ domain, s, isAdmin }: { domain: string; s: Source; isAdmin: bo
       </dl>
       <div className="stack">
         <Link to={`/records${qs({ domain, source: s.key })}`}>Show all records of this source →</Link>
+        {isAdmin && s.ruf_count > 0 && <Link to={`/forensic${qs({ source: s.key })}`}>{s.ruf_count} failure report(s) from this source →</Link>}
         {isAdmin ? <Classify domain={domain} s={s} /> : s.note && <p><strong>Note:</strong> {s.note}</p>}
       </div>
     </div>

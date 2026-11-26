@@ -105,6 +105,44 @@ poort 8080.
 cd frontend && npm install && npm run dev
 ```
 
+## Failure reports (RUF): analyse
+
+**RUF ontvangen:**
+- Zet in het DMARC-record `ruf=mailto:<rapportadres>; fo=1`. Met `fo=1` krijg je een
+  rapport zodra SPF *of* DKIM faalt. De DNS-check geeft een tip als `fo=1` ontbreekt.
+- Google, Microsoft en Yahoo sturen geen RUF.
+
+**Body-opslag staat aan** (`DMARC_RUF_STORE_BODY=true`, standaard):
+- de inhoud van de gerapporteerde mail wordt bewaard;
+- alleen admins zien hem;
+- elke keer dat iemand een rapport bekijkt of exporteert komt in het auditlog;
+- na `DMARC_RUF_RETENTION_DAYS` (30) dagen wordt hij automatisch verwijderd.
+
+Zet de opslag uit met `DMARC_RUF_STORE_BODY=false`. Dat geldt alleen voor nieuwe rapporten.
+
+**Wat het portaal per rapport toont:**
+- **Oordeel van de ontvanger:** de uitgelezen `Authentication-Results` (DMARC/SPF/DKIM met
+  domeinen) en de `DKIM-Signature` (d=, s=).
+- **Route van de mail:** de `Received`-hops, oudste eerst, met IP, PTR, provider en land.
+  Interne IP's worden gemarkeerd.
+- **Wat opvalt:**
+  - een Reply-To of Return-Path op een ander domein;
+  - een display name met een ander adres;
+  - een Message-ID van een ander domein;
+  - de gebruikte mailer;
+  - links naar andere domeinen.
+- **Links en bijlagen:**
+  - links ontmanteld (`hxxps://pay[.]…`) en per domein geteld;
+  - bijlagen met naam, type, grootte en SHA-256.
+
+  Het portaal opent nooit links, voert nooit bijlagen uit en rendert geen HTML; de tekst
+  wordt als platte tekst getoond.
+- **Campagnes:** rapporten gegroepeerd per verzendend IP en onderwerp. Vanaf de pagina
+  Sending sources klik je door naar de RUF van een bron.
+- **Export als `.eml`:** de adressen van ontvangers zijn vervangen door
+  `redacted@<domein>`, en de body zit er optioneel in. Bedoeld om te delen met een
+  provider of CERT.
+
 ## Meldingen per mail (fase 5)
 
 De job `alerts` draait elk kwartier en verstuurt de mail via Graph vanuit de DMARC-mailbox

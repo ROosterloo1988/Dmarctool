@@ -168,6 +168,10 @@ def check_dmarc(domain: str, resolver: Resolver) -> tuple[dict[str, Any], list[F
     if p in ("quarantine", "reject") and rec.tags.get("sp") == "none" and not result["inherited"]:
         findings.append(Finding("dmarc", "warning", "dmarc.sp_weaker",
                                 "sp=none: subdomains are not protected and can be spoofed.", "Remove sp= or set it equal to p."))
+    if rec.ruf and rec.tags.get("fo", "0").strip() == "0":
+        findings.append(Finding("dmarc", "info", "dmarc.ruf_fo",
+                                "Failure reports (ruf) are only sent when both SPF and DKIM fail (fo=0, the default).",
+                                "Add fo=1 to receive a failure report when SPF or DKIM fails."))
     if not rec.rua:
         findings.append(Finding("dmarc", "warning", "dmarc.no_rua", "No rua= address: you receive no aggregate reports.",
                                 "Add rua=mailto:<report address>."))

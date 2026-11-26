@@ -194,6 +194,48 @@ This is an authentication failure report for an email message received from 203.
 """
 
 
+PHISHING = b"""Received: from mx.receiver.example (mx.receiver.example [198.51.100.5])
+  by mailstore.receiver.example with LMTP; Mon, 24 Nov 2025 11:02:05 +0000
+Received: from mail.bulk-sender.example (mail.bulk-sender.example [203.0.113.66])
+  by mx.receiver.example (Postfix) with ESMTPS id 4XyZ for <j.jansen@receiver.example>; Mon, 24 Nov 2025 11:02:03 +0000
+Received: from [10.1.2.3] (helo=workstation) by mail.bulk-sender.example with esmtpa; Mon, 24 Nov 2025 11:02:00 +0000
+Authentication-Results: mx.receiver.example; dkim=pass header.d=bulk-sender.example header.s=k1; spf=fail smtp.mailfrom=bulk-sender.example; dmarc=fail (p=none) header.from=example.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=bulk-sender.example; s=k1; h=from:to:subject; bh=abc=; b=def=
+From: "finance@example.com" <noreply@example.com>
+Reply-To: payments@collect-invoices.example
+To: "Jan Jansen" <j.jansen@receiver.example>
+Subject: Outstanding invoice 2025-1187
+Date: Mon, 24 Nov 2025 11:01:59 +0000
+Message-ID: <a1b2c3@bulk-sender.example>
+X-Mailer: MassMailer Pro 7.2
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Dear customer, please pay invoice 2025-1187 via https://pay.collect-invoices.example/inv?id=1187
+--alt
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Dear customer,</p><p>Please <a href="https://pay.collect-invoices.example/inv?id=1187">pay invoice 2025-1187</a>.
+Questions? <a href="https://www.example.com/contact">Contact us</a> or <a href="mailto:x@example.com">mail</a>.</p>
+<script>alert(1)</script></body></html>
+--alt--
+
+--outer
+Content-Type: application/pdf; name="invoice-2025-1187.pdf"
+Content-Disposition: attachment; filename="invoice-2025-1187.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJWZha2UgcGRmCg==
+--outer--
+"""
+
+
 def build_ruf() -> None:
     write(RUF / "arf_full.eml", arf(
         b"Content-Type: message/feedback-report\n\n" + FEEDBACK,
@@ -209,6 +251,14 @@ def build_ruf() -> None:
         b"Content-Type: message/feedback-report\nContent-Transfer-Encoding: base64\n\n" + b64,
         b"Content-Type: text/rfc822-headers\n\n" + headers_only,
         "<ruf-3@receiver.example>"))
+    write(RUF / "arf_phishing.eml", arf(
+        b"Content-Type: message/feedback-report\n\n" + FEEDBACK
+        .replace(b"Arrival-Date: Mon, 24 Nov 2025 10:15:02", b"Arrival-Date: Mon, 24 Nov 2025 11:02:03")
+        .replace(b"spf=fail smtp.mailfrom=spoofer.example; dkim=none", b"spf=fail smtp.mailfrom=bulk-sender.example; dkim=pass header.d=bulk-sender.example")
+        .replace(b"<bounce@spoofer.example>", b"<bounce@bulk-sender.example>")
+        .replace(b"<victim@receiver.example>", b"<j.jansen@receiver.example>"),
+        b"Content-Type: message/rfc822\n\n" + PHISHING,
+        "<ruf-5@receiver.example>"))
     write(BROKEN / "arf_no_feedback_type.eml", arf(
         b"Content-Type: message/feedback-report\n\n" + FEEDBACK.replace(b"Feedback-Type: auth-failure\n", b""),
         b"Content-Type: text/rfc822-headers\n\n" + headers_only,

@@ -6,7 +6,7 @@ import ipaddress
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import bindparam, func, or_, select, text, update
+from sqlalchemy import bindparam, func, or_, select, text, union, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -43,11 +43,13 @@ def enrich_ips(session: Session, resolver: Resolver, geo: GeoIp, catalog: Catalo
     s = settings or get_settings()
     now = now or datetime.now(UTC)
     stale = now - timedelta(days=s.ip_info_max_age_days)
+    # Source IPs from aggregate records and from failure reports.
+    seen = union(select(m.AggregateRecord.source_ip.label("ip")),
+                 select(m.ForensicReport.source_ip.label("ip")).where(m.ForensicReport.source_ip.is_not(None))).subquery()
     ips = session.scalars(
-        select(m.AggregateRecord.source_ip)
-        .outerjoin(m.IpInfo, m.IpInfo.ip == m.AggregateRecord.source_ip)
+        select(seen.c.ip)
+        .outerjoin(m.IpInfo, m.IpInfo.ip == seen.c.ip)
         .where(or_(m.IpInfo.ip.is_(None), m.IpInfo.updated_at < stale))
-        .group_by(m.AggregateRecord.source_ip)
         .limit(limit)
     ).all()
     done = 0

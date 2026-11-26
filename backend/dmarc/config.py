@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     max_nesting_depth: int = 2  # e.g. zip containing a .gz
 
     # --- Forensic (RUF) privacy ----------------------------------------------------------
-    ruf_store_body: bool = False
+    ruf_store_body: bool = True  # keeps the original body (personal data) for the retention period
     ruf_retention_days: int = 30
 
     # --- Aggregate (RUA) retention -------------------------------------------------------

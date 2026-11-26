@@ -97,6 +97,7 @@ def test_raw_xml_storage_can_be_disabled(session, settings):
 
 
 def test_forensic_storage_and_privacy(session, settings):
+    settings.ruf_store_body = False
     out = ingest_email(session, fixture_bytes("ruf", "arf_full.eml"), external_id="ruf-1", settings=settings)
     again = ingest_email(session, fixture_bytes("ruf", "arf_full.eml"), external_id="ruf-1b", settings=settings)
     session.commit()

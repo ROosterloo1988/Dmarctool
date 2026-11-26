@@ -51,6 +51,7 @@ def test_multiple_records():
     ("v=DMARC1; p=none", "dmarc.no_rua"),
     ("v=DMARC1; p=quarantine; pct=25; rua=mailto:d@example.com", "dmarc.pct_partial"),
     ("v=DMARC1; p=reject; sp=none; rua=mailto:d@example.com", "dmarc.sp_weaker"),
+    ("v=DMARC1; p=none; rua=mailto:d@example.com; ruf=mailto:d@example.com", "dmarc.ruf_fo"),
 ])
 def test_problems(rec, code):
     _, f = run([rec])
@@ -81,3 +82,8 @@ def test_subdomain_inherits_org_policy():
 def test_temp_error():
     _, f = run([], temp={"_dmarc.example.com"})
     assert codes(f) == {"dmarc.dns_error"}
+
+
+def test_ruf_with_fo1_no_hint():
+    _, f = run(["v=DMARC1; p=none; rua=mailto:d@example.com; ruf=mailto:d@example.com; fo=1"])
+    assert "dmarc.ruf_fo" not in codes(f)

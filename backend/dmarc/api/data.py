@@ -154,6 +154,10 @@ def _sources(db: Session, domain: str, days: int, settings: Settings) -> list[di
     if ips:
         for info in db.scalars(select(m.IpInfo).where(m.IpInfo.ip.in_(list(ips)))):
             asn_info[str(info.ip)] = info
+    ruf_by_ip = dict(db.execute(select(m.ForensicReport.source_ip, func.count()).where(
+        m.ForensicReport.reported_domain == domain).group_by(m.ForensicReport.source_ip)).all())
+    ruf_by_ip = {str(k): v for k, v in ruf_by_ip.items() if k is not None}
+    ruf_counts = {s.key: sum(ruf_by_ip.get(ip, 0) for ip in s.ips) for s in sources}
     out = []
     for s in sources:
         d = s.as_dict()
@@ -164,6 +168,7 @@ def _sources(db: Session, domain: str, days: int, settings: Settings) -> list[di
         d["asns"] = sorted({f"AS{i.asn} {i.as_org or ''}".strip() for i in infos if i.asn})[:5]
         d["countries"] = sorted({i.country for i in infos if i.country})
         d["ips"] = sorted(s.ips)[:50]
+        d["ruf_count"] = ruf_counts.get(s.key, 0)
         out.append(d)
     return out
 
@@ -480,28 +485,115 @@ def dns_status(domain: str, db: Session = Depends(get_db)):
 # Forensic (RUF) - admins only: contains personal data
 # --------------------------------------------------------------------------------------
 
-@router.get("/forensic", dependencies=[Depends(require_admin)])
-def list_forensic(domain: str | None = None, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=MAX_PAGE),
-                  db: Session = Depends(get_db)):
+def _forensic_filter(db: Session, q, domain: str | None, ip: str | None, source: str | None, search: str | None):
     f = m.ForensicReport
-    q = select(f)
     if domain:
         q = q.where(f.reported_domain == domain.lower())
-    total = db.scalar(select(func.count()).select_from(q.subquery()))
-    rows = db.scalars(q.order_by(f.arrival_date.desc().nulls_last(), f.id.desc()).offset((page - 1) * page_size).limit(page_size))
+    if ip:
+        import ipaddress
+
+        try:
+            q = q.where(f.source_ip == str(ipaddress.ip_address(ip)))
+        except ValueError:
+            raise HTTPException(422, "invalid ip") from None
+    if source:
+        ips = select(m.AggregateRecord.source_ip).where(m.AggregateRecord.source_key == source).distinct()
+        q = q.where(f.source_ip.in_(ips))
+    if search:
+        like = f"%{search.strip()[:100]}%"
+        q = q.where(f.original_subject.ilike(like) | f.original_from.ilike(like) | f.original_mail_from.ilike(like))
+    return q
+
+
+@router.get("/forensic", dependencies=[Depends(require_admin)])
+def list_forensic(domain: str | None = None, ip: str | None = None, source: str | None = None,
+                  q: str | None = Query(None, max_length=100), page: int = Query(1, ge=1),
+                  page_size: int = Query(50, ge=1, le=MAX_PAGE), db: Session = Depends(get_db)):
+    f = m.ForensicReport
+    query = _forensic_filter(db, select(f), domain, ip, source, q)
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = db.scalars(query.order_by(f.arrival_date.desc().nulls_last(), f.id.desc())
+                      .offset((page - 1) * page_size).limit(page_size)).all()
+    infos = {str(i.ip): i for i in db.scalars(select(m.IpInfo).where(m.IpInfo.ip.in_(
+        [str(x.source_ip) for x in rows if x.source_ip])))} if rows else {}
     return {"total": total, "items": [
         {"id": x.id, "arrival_date": x.arrival_date, "reporter": x.reporter, "source_ip": str(x.source_ip) if x.source_ip else None,
+         "as_org": infos[str(x.source_ip)].as_org if x.source_ip and str(x.source_ip) in infos else None,
          "reported_domain": x.reported_domain, "auth_failure": x.auth_failure, "delivery_result": x.delivery_result,
-         "original_from": x.original_from, "original_subject": x.original_subject, "expires_at": x.expires_at}
+         "original_from": x.original_from, "original_subject": x.original_subject, "body_stored": x.original_body is not None,
+         "expires_at": x.expires_at}
         for x in rows]}
 
 
+@router.get("/forensic/campaigns", dependencies=[Depends(require_admin)])
+def forensic_campaigns(domain: str | None = None, db: Session = Depends(get_db)):
+    """Failure reports grouped by source IP and subject: one row per campaign instead of per mail."""
+    f = m.ForensicReport
+    subject = func.coalesce(f.original_subject, "(no subject)")
+    query = _forensic_filter(db, select(
+        f.source_ip, subject.label("subject"), func.count().label("reports"),
+        func.min(f.arrival_date).label("first_seen"), func.max(f.arrival_date).label("last_seen"),
+        func.count(func.distinct(f.reporter)).label("reporters"), func.max(f.id).label("latest_id"),
+        func.max(f.original_from).label("from_example"),
+    ), domain, None, None, None).group_by(f.source_ip, subject).order_by(func.count().desc(), func.max(f.arrival_date).desc()).limit(200)
+    rows = db.execute(query).all()
+    ips = [str(r.source_ip) for r in rows if r.source_ip]
+    infos = {str(i.ip): i for i in db.scalars(select(m.IpInfo).where(m.IpInfo.ip.in_(ips)))} if ips else {}
+    out = []
+    for r in rows:
+        info = infos.get(str(r.source_ip)) if r.source_ip else None
+        out.append({"source_ip": str(r.source_ip) if r.source_ip else None, "subject": r.subject, "reports": r.reports,
+                    "first_seen": r.first_seen, "last_seen": r.last_seen, "reporters": r.reporters,
+                    "latest_id": r.latest_id, "from_example": r.from_example,
+                    "as_org": info.as_org if info else None, "country": info.country if info else None,
+                    "ptr": info.ptr if info else None})
+    return out
+
+
+INTERNAL_NETS = [__import__("ipaddress").ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+    "fc00::/7", "fe80::/10", "::1/128")]
+
+
+def _hop_enrichment(db: Session, hops: list[dict], settings: Settings) -> None:
+    import ipaddress
+
+    from dmarc.geoip import GeoIp
+
+    ips = [h["ip"] for h in hops if h.get("ip")]
+    infos = {str(i.ip): i for i in db.scalars(select(m.IpInfo).where(m.IpInfo.ip.in_(ips)))} if ips else {}
+    geo = None
+    for h in hops:
+        ip = h.get("ip")
+        if not ip:
+            continue
+        addr = ipaddress.ip_address(ip)
+        h["private"] = any(addr in n for n in INTERNAL_NETS if n.version == addr.version)
+        info = infos.get(ip)
+        if info:
+            h.update(ptr=info.ptr, asn=info.asn, as_org=info.as_org, country=info.country)
+        elif not h["private"]:
+            if geo is None:
+                geo = GeoIp.from_settings(settings)
+            g = geo.lookup(ip)
+            h.update(ptr=None, asn=g.asn, as_org=g.as_org, country=g.country)
+    if geo is not None:
+        geo.close()
+
+
 @router.get("/forensic/{fid}", dependencies=[Depends(require_admin)])
-def get_forensic(fid: int, request: Request, db: Session = Depends(get_db), user: CurrentUser = Depends(require_admin)):
+def get_forensic(fid: int, request: Request, db: Session = Depends(get_db), user: CurrentUser = Depends(require_admin),
+                 settings: Settings = Depends(get_settings_dep)):
+    from dmarc.forensic_analysis import analyse
+
     x = db.get(m.ForensicReport, fid)
     if x is None:
         raise HTTPException(404, "not found")
     audit(db, request, user.label, "view_forensic", str(fid))
+    analysis = analyse(x.original_headers, x.original_body, x.authentication_results, x.reported_domain)
+    _hop_enrichment(db, analysis["hops"], settings)
+    same_ip = db.scalar(select(func.count()).select_from(m.ForensicReport).where(
+        m.ForensicReport.source_ip == x.source_ip)) if x.source_ip else 0
     return {
         "id": x.id, "feedback_type": x.feedback_type, "reporter": x.reporter, "user_agent": x.user_agent,
         "arrival_date": x.arrival_date, "source_ip": str(x.source_ip) if x.source_ip else None,
@@ -511,7 +603,20 @@ def get_forensic(fid: int, request: Request, db: Session = Depends(get_db), user
         "spf_dns": x.spf_dns, "identity_alignment": x.identity_alignment, "original_subject": x.original_subject,
         "original_from": x.original_from, "original_to": x.original_to, "original_message_id": x.original_message_id,
         "original_date": x.original_date, "original_headers": x.original_headers,
-        "body_stored": x.original_body is not None,
-        "original_body": x.original_body.decode("utf-8", errors="replace") if x.original_body is not None else None,
-        "expires_at": x.expires_at,
+        "body_stored": x.original_body is not None, "expires_at": x.expires_at,
+        "analysis": analysis, "reports_from_same_ip": same_ip,
     }
+
+
+@router.get("/forensic/{fid}/export.eml", dependencies=[Depends(require_admin)])
+def export_forensic(fid: int, request: Request, include_body: bool = False, db: Session = Depends(get_db),
+                    user: CurrentUser = Depends(require_admin)):
+    from dmarc.forensic_analysis import anonymised_eml
+
+    x = db.get(m.ForensicReport, fid)
+    if x is None:
+        raise HTTPException(404, "not found")
+    audit(db, request, user.label, "export_forensic", str(fid), include_body=include_body)
+    data = anonymised_eml(x.original_headers, x.original_body, include_body)
+    return Response(data, media_type="message/rfc822",
+                    headers={"Content-Disposition": f'attachment; filename="failure-report-{fid}.eml"'})

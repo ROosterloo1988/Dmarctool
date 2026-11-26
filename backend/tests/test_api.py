@@ -68,7 +68,10 @@ def viewer(app, users):
 def data(session, settings, fake_dns, geoip_files):
     for name in ("google.eml", "microsoft.eml", "yahoo.eml", "mailru.eml"):
         ingest_email(session, fixture_bytes("rua", name), settings=settings)
+    settings.ruf_store_body = False
     ingest_email(session, fixture_bytes("ruf", "arf_full.eml"), settings=settings)
+    settings.ruf_store_body = True
+    ingest_email(session, fixture_bytes("ruf", "arf_phishing.eml"), settings=settings)
     ingest_email(session, fixture_bytes("broken", "mixed.eml"), external_id="mixed", settings=settings)
     session.add(m.Domain(name="example.com"))
     session.commit()
@@ -343,10 +346,47 @@ def test_dns_endpoint(admin, data):
 
 def test_forensic_admin_only_and_audited(admin, data, session):
     items = admin.get("/api/forensic?domain=example.com").json()["items"]
-    assert len(items) == 1 and items[0]["original_subject"] == "Urgent invoice"
-    detail = admin.get(f"/api/forensic/{items[0]['id']}").json()
+    assert len(items) == 2
+    plain = next(i for i in items if i["original_subject"] == "Urgent invoice")
+    detail = admin.get(f"/api/forensic/{plain['id']}").json()
     assert detail["body_stored"] is False and ["Subject", "Urgent invoice"] in detail["original_headers"]
+    assert detail["analysis"]["body"] is None and detail["reports_from_same_ip"] == 2
     assert session.scalars(select(m.AuditLog).where(m.AuditLog.action == "view_forensic")).first()
+
+
+def test_forensic_analysis_api(admin, data):
+    [ph] = admin.get("/api/forensic?q=invoice 2025").json()["items"]
+    assert ph["body_stored"] and ph["as_org"] == "Example Bulletproof Hosting"
+    d = admin.get(f"/api/forensic/{ph['id']}").json()
+    a = d["analysis"]
+    assert a["auth_summary"]["dkim"] == "pass" and a["body"]["attachments"][0]["filename"] == "invoice-2025-1187.pdf"
+    hops = a["hops"]
+    assert hops[0]["private"] is True and hops[1]["private"] is False  # 10.x internal, public sender not
+    assert (hops[1]["ip"], hops[1]["as_org"], hops[1]["country"]) == ("203.0.113.66", "Example Bulletproof Hosting", "RU")
+    assert any(x["code"] == "reply_to_foreign" for x in a["anomalies"])
+
+
+def test_forensic_filters_and_campaigns(admin, data):
+    assert admin.get("/api/forensic?ip=203.0.113.66").json()["total"] == 2
+    assert admin.get("/api/forensic?ip=192.0.2.1").json()["total"] == 0
+    assert admin.get("/api/forensic?ip=bad").status_code == 422
+    camps = admin.get("/api/forensic/campaigns?domain=example.com").json()
+    assert {c["subject"] for c in camps} == {"Urgent invoice", "Outstanding invoice 2025-1187"}
+    assert all(c["reports"] == 1 and c["source_ip"] == "203.0.113.66" for c in camps)
+
+
+def test_forensic_export(admin, data, session):
+    [ph] = admin.get("/api/forensic?q=2025-1187").json()["items"]
+    r = admin.get(f"/api/forensic/{ph['id']}/export.eml")
+    assert r.headers["content-type"].startswith("message/rfc822") and "attachment" in r.headers["content-disposition"]
+    assert b"j.jansen@receiver.example" not in r.content and b"(body not included)" in r.content
+    assert b"invoice-2025-1187.pdf" in admin.get(f"/api/forensic/{ph['id']}/export.eml?include_body=true").content
+    assert session.scalars(select(m.AuditLog).where(m.AuditLog.action == "export_forensic")).first()
+
+
+def test_forensic_viewer_forbidden(viewer, data):
+    assert viewer.get("/api/forensic/campaigns").status_code == 403
+    assert viewer.get("/api/forensic/1/export.eml").status_code == 403
 
 
 # --------------------------------------------------------------------------------------

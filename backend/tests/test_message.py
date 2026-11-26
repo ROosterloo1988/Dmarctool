@@ -35,6 +35,7 @@ def test_bare_eml_via_parse_file(settings):
 
 
 def test_forensic_email(settings):
+    settings.ruf_store_body = False
     p = parse_email(fixture_bytes("ruf", "arf_full.eml"), settings)
     assert p.kind == "ruf" and p.ok and p.forensic[0].original_body is None
 

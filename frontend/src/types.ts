@@ -40,7 +40,7 @@ export interface Source {
   recognised: boolean; considered_legit: boolean; messages: number; failing: number; dmarc_pass_pct: number;
   spf_aligned_pct: number; dkim_aligned_pct: number; spf_pass_pct: number; dkim_pass_pct: number; ip_count: number;
   envelope_domains: Record<string, number>; dkim_domains: Record<string, number>; selectors: Record<string, number>;
-  note: string | null; classified_by: string | null; asns: string[]; countries: string[]; ips: string[];
+  note: string | null; classified_by: string | null; asns: string[]; countries: string[]; ips: string[]; ruf_count: number;
 }
 
 export interface AuthResult { method: "spf" | "dkim"; domain: string | null; selector: string | null; scope: string | null; result: string; aligned: boolean }
