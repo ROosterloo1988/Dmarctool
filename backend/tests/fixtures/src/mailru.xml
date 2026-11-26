@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<feedback>
+	<report_metadata>
+		<org_name>Mail.Ru</org_name>
+		<email>dmarc_support@corp.mail.ru</email>
+		<extra_contact_info>http://help.mail.ru/mail-help</extra_contact_info>
+		<report_id>28461832491357283071</report_id>
+		<date_range>
+			<begin>1763942400</begin>
+			<end>1764028800</end>
+		</date_range>
+	</report_metadata>
+	<policy_published>
+		<domain>EXAMPLE.COM</domain>
+		<adkim>r</adkim>
+		<aspf>r</aspf>
+		<p>none</p>
+		<sp>none</sp>
+		<pct>100</pct>
+	</policy_published>
+	<record>
+		<row>
+			<source_ip> 203.0.113.5 </source_ip>
+			<count>1</count>
+			<policy_evaluated>
+				<disposition>none</disposition>
+				<dkim>fail</dkim>
+				<spf>fail</spf>
+			</policy_evaluated>
+		</row>
+		<identifiers>
+			<header_from>Example.com</header_from>
+		</identifiers>
+		<auth_results>
+			<dkim>
+				<domain>example.com</domain>
+				<result>fail</result>
+			</dkim>
+			<spf>
+				<domain>example.com</domain>
+				<scope>mfrom</scope>
+				<result>fail</result>
+			</spf>
+		</auth_results>
+	</record>
+</feedback>

@@ -1,0 +1,36 @@
+Content-Type: multipart/mixed; boundary="==mixed-boundary=="
+MIME-Version: 1.0
+From: dmarc@mixed.example
+Subject: Two reports
+Message-ID: <mixed@mixed.example>
+
+--==mixed-boundary==
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="good.xml.gz"
+
+H4sIAAAAAAAC/41UwXKbMBC9+ysY3w2YOk3MyEp7aG+9pWdGwIJVg6RKwkn+voslAXacmZ4svd3V
+2/d2MXl+67voDNpwKQ7rbZyuIxCVrLloD+vfLz83T+tnuiINQF2y6hRhujCH9aBFzsE2uWKa9SZH
+OBcmr3umq02Gr9BVFBH/LsVnSRIuY0CDktoWPVhWM8tGDFGp20KwHmjJzcalgI7hjfWqA5JMYZcN
+PeMddYwu2Xy7X+gyXZVn5vWFJEuzh02apluSzAGXiH1BoZloPR9CJbQcxTx+/bLfZbsUNTkkxEHU
+Y3SXZk+P+z3yivBYcvsaaUGAZlZq+sO1+evle7SLM5LMkdGp5I5VRMmOV++FGsqOmyNMLUsUKqjX
+HVeyR2KHuQRF/w44L2G5QFuUR801bAIuFNXwBypLEhEwVp94Tw1J3MGDRjVUIzb++la4qSRO/H1s
+/ChrajXAK+tO2NFtyFVYMMjfUkGScLzov6cVp1hJHSq1fJ1GYOSgKyi4ohlONa/LpzzPHlDUhIfM
+Sg7C0i0O0Z0C7vngzLoBh1aHgBOlpOF23OKlY0t8kT0a1ODmYcLklTe8oYoZM3rdTMTJfWbcgKCP
+8BqQsuH4JU1lR2A16KLRsr+e/DIwb+gZOqnAoSUKr8DEV2XXKb6FD8SEDfZYaDBDZ+debnT63Ru/
+vvjTpXSOQId7hitv8IvcoS/hPqc4Lu+bv0zWLYnJwtS5ibtaP/ZRoXLaj9KxicvlPzuYVz+5tWZM
+dutKkvA/Slf/ANu0bO96BQAA
+
+--==mixed-boundary==
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="bad.xml"
+
+PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiID8+CjxmZWVkYmFjaz4KICA8cmVw
+b3J0X21ldGFkYXRhPgogICAgPG9yZ19uYW1lPmdvb2dsZS5jb208L29yZ19uYW1lPgogICAgPGVt
+YWlsPm5vcmVwbHktZG1hcmMtc3VwcG9ydEBnb29nbGUuY29tPC9lbWFpbD4KICAgIDxleHRyYV9j
+b250YWN0X2luZm8+aHR0cHM6Ly9zdXBwb3J0Lmc=
+
+--==mixed-boundary==--

@@ -1,0 +1,38 @@
+Content-Type: multipart/mixed; boundary="==fixture-boundary=="
+MIME-Version: 1.0
+From: noreply-dmarc-support@google.com
+To: dmarc-reports@example.com
+Subject: Report domain: example.com Submitter: google.com Report-ID:
+ 13190401177745345981
+Date: Tue, 25 Nov 2025 06:12:00 +0000
+Message-ID: <13190401177745345981@google.com>
+
+--==fixture-boundary==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate report.
+--==fixture-boundary==
+Content-Type: application/zip
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="google.com!example.com!1763942400!1764028799.zip"
+
+UEsDBBQAAAAIAAAAeVtcUYXZTgIAAP0IAAAwAAAAZ29vZ2xlLmNvbSFleGFtcGxlLmNvbSExNzYz
+OTQyNDAwITE3NjQwMjg3OTkueG1s7VbLctsgFN3nKzzeWxKSbNkeQrrqF7RrDUZXNhMJGECJ8/eF
+CmTFSaYdN110pivDue9zjxnhh3PfLZ5AGy7F/RIl2XIBgsmGi+P98vu3r6vtcvFA7nAL0BwoeyR3
+iwXWoKS2dQ+WNtRSjzlU6mMtaA/kKOWxg4TJHqcTOPpAT3lHhHQZupdV01PNVmZQPt2XedjoF2LO
+VtOaSWEpszUXrSQna5XZp2kITS6hKU2pMM+g07zcbNbbzOV6Gz8mDmPwhqAC7bIyQ6iqqnJdlOvd
+FuH0Yh/93axQayqOYRoHHeDIBUHVptiVeZm5aiMS7SAaby2zfFvtdq4XEZOlr7NN1eakYiU7zl5q
+NRw6bk4wNSIdPYLAmfYqMhaw0YE2j7wnGqfjIYBGtT8x/ztCyq1CAE5VuJsImIgoZgnyc/nDCIno
+JNTY+XtdOnKZ1LFhLZ8nSowcNIOaK5LTDO0RQvu2zIo9y91t72i/OMQQJgdhSYlynI7HaAiV4Yl2
+g6OziQbPETdKGm6drkO7c2Tm5wlS1BjnMHEVyGiDYSJsNu1VTbe/OCPmDQjLW+7+VVPYCWgDum61
+7F/vbW4Imd7EYzrYU63BDJ29pLxq91eiCJL3OcJY4TKbGDpgVmoSD34bEZsImNfFM2o+oYcZ1U6n
+V0N756ip35EX2m2TNUqcepO8+FhWKPfy/ju6at0r9q6uRsO/pCv/IINOwKhVrCPA3i6xtr9RXAe3
+KQZ/1sin6izPiiRLECqSqvpYZsV/jc00dvuzYWRrx8luWilOL18yPwBQSwECFAMUAAAACAAAAHlb
+XFGF2U4CAAD9CAAAMAAAAAAAAAAAAAAAgAEAAAAAZ29vZ2xlLmNvbSFleGFtcGxlLmNvbSExNzYz
+OTQyNDAwITE3NjQwMjg3OTkueG1sUEsFBgAAAAABAAEAXgAAAJwCAAAAAA==
+
+--==fixture-boundary==--

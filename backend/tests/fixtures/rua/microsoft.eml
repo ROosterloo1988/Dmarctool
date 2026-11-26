@@ -1,0 +1,35 @@
+Content-Type: multipart/mixed; boundary="==fixture-boundary=="
+MIME-Version: 1.0
+From: DMARC Aggregate Report <dmarcreport@microsoft.com>
+To: dmarc-reports@example.com
+Subject: Report Domain: example.com Submitter:
+ enterprise.protection.outlook.com Report-ID: a1b2c3d4e5f60718293a4b5c6d7e8f90
+Date: Tue, 25 Nov 2025 06:12:00 +0000
+Message-ID: <a1b2c3d4e5f6@microsoft.com>
+
+--==fixture-boundary==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate report.
+--==fixture-boundary==
+Content-Type: application/gzip
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="enterprise.protection.outlook.com!example.com!1763942400!1764028800.xml.gz"
+
+H4sIAAAAAAAC/81VTXPbIBS851d4fK+QZDu2M4T00ls7PfTSmwajp5iJBAygOP33fQSQla9JLv24
+WLBv4S3LSqY3D0O/uAfrpFbXy6oolzfsgnYA7YGLuwVWlbt6cO318ui9uSLkdDoVp1Wh7S2py7Ii
+P799/SGOMPDlRJbvkz9J5TxXApbsYrGgSQDD/pTkSShYMNr6ZgDPW+55wBDF/RrFB2BflAdrrHSw
++D76Xus7SqZi5GIz2bN24FbEzT4PUljtdOcLoQdKIiGSUzvZMl4darFq17DpLstttav3K74+bMRl
+u4Vdt0eZZ25ci/qgsVzdps4IHeBW4qG2l6v9ul6XuCgiuQ6qDdV1We92oRrmcTPydLep29wIanQv
+xa/GjIdeuiNMQjSeSDF44IPpIR4yYZHA2zs5MEtJHCTQme4RC88IGaa0AkpMmrsMuIwY4VkVlIdB
+hDrNKkrw91H2axLRZaFtVmv1afLD6dEKaKRh67Koym1R1/jYYMOpkKlCj8qz3ZaSOMp4agj3vB/R
+wjYXgi/SGe2kD9mK55gjM14wxXDnkDD5kwzoUmEyaXbIZz3xzvLRqGxBedlJTPbs8u+h1wYar5nQ
+ymMki3RnIQnn4osFndXD0+t9WsoLjsBbsK/Q54Wk9YVCykd/bCy4sfdn0c8MeS9q0TXoQXhtWR7U
+6F/GzrTYKvmbJpPF8750Zv6HNQh0hw3hxNj8cfLBzufXgTx3JJBzkj8S6mpfF2URIv12ojd/KtAd
+fuX+60ArOLni36T61UC91PO3U4Wf0fQ/zC5+A3aG8PupBwAA
+
+--==fixture-boundary==--

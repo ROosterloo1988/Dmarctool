@@ -1,0 +1,23 @@
+Content-Type: multipart/mixed; boundary="==fixture-boundary=="
+MIME-Version: 1.0
+From: someone@example.org
+To: dmarc-reports@example.com
+Subject: Report
+Date: Tue, 25 Nov 2025 06:12:00 +0000
+Message-ID: <pdf@example.org>
+
+--==fixture-boundary==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate report.
+--==fixture-boundary==
+Content-Type: application/zip
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="report.zip"
+
+JVBERi0xLjQgZmFrZQ==
+
+--==fixture-boundary==--

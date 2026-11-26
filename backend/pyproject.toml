@@ -1,0 +1,29 @@
+[project]
+name = "dmarc"
+version = "0.1.0"
+description = "DMARC aggregate (RUA) and forensic (RUF) report processing"
+requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    "defusedxml>=0.7",
+    "publicsuffixlist>=1.0",
+    "pydantic-settings>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+dmarc = "dmarc.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["dmarc*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

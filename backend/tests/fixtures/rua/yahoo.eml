@@ -1,0 +1,33 @@
+Content-Type: multipart/mixed; boundary="==fixture-boundary=="
+MIME-Version: 1.0
+From: dmarchelp@yahooinc.com
+To: dmarc-reports@example.com
+Subject: Report Domain: example.com Submitter: Yahoo Report-ID:
+ <1764000000.592341>
+Date: Tue, 25 Nov 2025 06:12:00 +0000
+Message-ID: <1764000000.592341@yahoo.com>
+
+--==fixture-boundary==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate report.
+--==fixture-boundary==
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="yahoo.com!example.com!1763942400!1764028799.xml.gz"
+
+H4sIAAAAAAAC/4VUW3LjIBD8zylcOYCwFWcTVbFkr7FfKgwji4p4FKAkvv0OBiTZm9rVj6BnmOlu
+RqJvX3rafYAPypqfj4dm//jGHugAIE9cvLOH3Y56cNbHXkPkkkeeMEStP/eGa2C/+WgtJcs+h0Fz
+NTGpuRcjTO7XJWUpIxphNSU5mjNLeSXZ4eXHcX99mueufToeKFmDORkJQO+5OZc+CJ3grEw6+9Qd
+WzxPSUZqHEyp3L6+dB32NrUYua22dNsqpc5OSlx6N58mFUZYiFiUYBh8ce0myKoKlhO4fFeaeUry
+ooDBDVcsvTPkmLEGKHF1LyI7JBVpcWX1HQN0TVhfyXj7ucgNdvYCeuVYu++a1+embfdNsnIN1FRh
+ZxNZS0leVLj0gw8+zWiQrIGkWgVng4o4LIX2FtnkJcmOh4AJi/pMD4UPePnIp1pQpoCHbQmE4sUB
+G6z/5F6CpOS63yag6RqQeBomZc47tCcmMRlda5Pb4oujdwoxr/pIlcQSalD4YSzHRuASfD94q2/v
+fRsolf46T/kcx95DmKe4lrwz539DlR2ECUS0ntVFutuKbQ1NrcollM1iwLYvvb2I0i95GZrKBD/u
+b5j8s8U64eReekrO00vJ+qf5A8jpnpaLBAAA
+
+--==fixture-boundary==--

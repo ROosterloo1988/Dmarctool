@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+node_modules/
+dist/
+backups/
+data/
+import/*
+!import/.gitkeep
+*.egg-info/
