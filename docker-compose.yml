@@ -36,7 +36,7 @@ services:
       retries: 20
     # Only on localhost (for running tests from the host). Remove in production if unused.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
 
   migrate:
     <<: *app
@@ -52,7 +52,7 @@ services:
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     ports:
       # The Azure Application Gateway connects to <docker-host-private-ip>:8080.
-      - "${API_BIND:-0.0.0.0}:8080:8080"
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
       interval: 30s
