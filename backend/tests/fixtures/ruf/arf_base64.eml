@@ -1,0 +1,41 @@
+From: DMARC Failure Reports <ruf-reports@receiver.example>
+To: dmarc-reports@example.com
+Subject: FW: Urgent invoice
+Date: Mon, 24 Nov 2025 10:20:00 +0000
+Message-ID: <ruf-3@receiver.example>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report; boundary="arf-boundary"
+
+--arf-boundary
+Content-Type: text/plain; charset=us-ascii
+
+This is an authentication failure report for an email message received from 203.0.113.66.
+
+--arf-boundary
+Content-Type: message/feedback-report
+Content-Transfer-Encoding: base64
+
+RmVlZGJhY2stVHlwZTogYXV0aC1mYWlsdXJlClVzZXItQWdlbnQ6IFJlY2VpdmVyTVRBLzIuMQpW
+ZXJzaW9uOiAxCk9yaWdpbmFsLU1haWwtRnJvbTogPGJvdW5jZUBzcG9vZmVyLmV4YW1wbGU+Ck9y
+aWdpbmFsLVJjcHQtVG86IDx2aWN0aW1AcmVjZWl2ZXIuZXhhbXBsZT4KQXJyaXZhbC1EYXRlOiBN
+b24sIDI0IE5vdiAyMDI1IDEwOjE1OjAyICswMDAwClNvdXJjZS1JUDogMjAzLjAuMTEzLjY2ClJl
+cG9ydGVkLURvbWFpbjogZXhhbXBsZS5jb20KQXV0aGVudGljYXRpb24tUmVzdWx0czogbXgucmVj
+ZWl2ZXIuZXhhbXBsZTsgZG1hcmM9ZmFpbCAocD1ub25lKSBoZWFkZXIuZnJvbT1leGFtcGxlLmNv
+bTsgc3BmPWZhaWwgc210cC5tYWlsZnJvbT1zcG9vZmVyLmV4YW1wbGU7IGRraW09bm9uZQpBdXRo
+LUZhaWx1cmU6IGRtYXJjCkRlbGl2ZXJ5LVJlc3VsdDogZGVsaXZlcmVkCklkZW50aXR5LUFsaWdu
+bWVudDogbm9uZQo=
+
+--arf-boundary
+Content-Type: text/rfc822-headers
+
+Received: from unknown (HELO spoofer.example) (203.0.113.66)
+  by mx.receiver.example with SMTP; Mon, 24 Nov 2025 10:15:02 +0000
+From: "Finance" <finance@example.com>
+To: victim@receiver.example
+Subject: Urgent invoice
+Date: Mon, 24 Nov 2025 10:15:00 +0000
+Message-ID: <spoof-123@spoofer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+--arf-boundary--

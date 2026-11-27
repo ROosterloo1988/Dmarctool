@@ -1,0 +1,171 @@
+# Catalogue of well-known e-mail senders.
+#
+# A source is recognised by (in order of reliability):
+#   ptr_suffixes     - reverse DNS name of the sending IP ends with one of these
+#   dkim_domains     - a DKIM signature (d=) for this organisational domain is present
+#   envelope_domains - the SPF / Return-Path domain belongs to this organisational domain
+#   asns             - only for providers whose ASN is used exclusively for their mail service
+#
+# Guidance fields are used for plain-language recommendations:
+#   spf_include      - what customers add to their own SPF record (null: not applicable)
+#   spf_alignable    - can SPF ever be aligned (custom return-path / MAIL FROM on own domain)?
+#   dkim_setup       - how to sign with your own domain
+#   return_path_setup- how to get an aligned return-path (if spf_alignable)
+#
+# Extend or override entries with your own file: DMARC_SENDERS_CATALOG_PATH=/data/senders.local.yaml
+# (same format; entries with the same key replace the built-in ones).
+
+microsoft365:
+  name: Microsoft 365 (Exchange Online)
+  category: mailbox
+  ptr_suffixes: [outbound.protection.outlook.com]
+  dkim_domains: [onmicrosoft.com]
+  spf_include: spf.protection.outlook.com
+  spf_alignable: true
+  dkim_setup: >-
+    In the Microsoft Defender portal go to Email & collaboration > Policies & rules > Threat policies >
+    Email authentication settings > DKIM, select the domain, publish the two CNAME records
+    (selector1._domainkey and selector2._domainkey) and enable signing.
+
+google_workspace:
+  name: Google Workspace
+  category: mailbox
+  ptr_suffixes: [google.com]
+  asns: [15169]
+  spf_include: _spf.google.com
+  spf_alignable: true
+  dkim_setup: >-
+    In the Google Admin console go to Apps > Google Workspace > Gmail > Authenticate email, generate a
+    2048-bit key, publish the TXT record (google._domainkey) and click Start authentication.
+
+flowmailer:
+  name: Flowmailer
+  category: transactional
+  ptr_suffixes: [flowmailer.net]
+  dkim_domains: [flowmailer.net]
+  envelope_domains: [flowmailer.net]
+  spf_include: spf.flowmailer.net
+  spf_alignable: true
+  dkim_setup: >-
+    In Flowmailer add the domain as sender domain and publish the DKIM CNAME records it shows.
+  return_path_setup: >-
+    Configure a custom return-path (bounce) subdomain in Flowmailer, e.g. CNAME bounce.<domain>,
+    so that SPF aligns.
+
+mailchimp:
+  name: Mailchimp
+  category: marketing
+  ptr_suffixes: [mcsv.net, mcdlv.net, rsgsv.net]
+  dkim_domains: [mcsv.net, mcdlv.net, mailchimpapp.net]
+  envelope_domains: [mcsv.net, mcdlv.net, mailchimpapp.net, rsgsv.net]
+  spf_include: null
+  spf_alignable: false
+  dkim_setup: >-
+    In Mailchimp go to Website > Domains, authenticate the domain and publish the two DKIM CNAME
+    records (k2._domainkey and k3._domainkey). Mailchimp always uses its own return-path, so DMARC
+    must pass via DKIM.
+
+mandrill:
+  name: Mandrill (Mailchimp Transactional)
+  category: transactional
+  ptr_suffixes: [mandrillapp.com]
+  dkim_domains: [mandrillapp.com]
+  envelope_domains: [mandrillapp.com]
+  spf_include: spf.mandrillapp.com
+  spf_alignable: true
+  dkim_setup: In Mandrill go to Settings > Domains > Sending domains, add the domain and publish the DKIM record.
+  return_path_setup: Set a custom return-path domain for the sending domain in Mandrill.
+
+sendgrid:
+  name: Twilio SendGrid
+  category: transactional
+  ptr_suffixes: [sendgrid.net]
+  dkim_domains: [sendgrid.net]
+  envelope_domains: [sendgrid.net]
+  spf_include: sendgrid.net
+  spf_alignable: true
+  dkim_setup: >-
+    In SendGrid go to Settings > Sender Authentication > Authenticate Your Domain and publish the
+    CNAME records (em…, s1._domainkey, s2._domainkey). This aligns both DKIM and the return-path.
+  return_path_setup: Domain Authentication in SendGrid also sets an aligned return-path (em… CNAME).
+
+mailgun:
+  name: Mailgun
+  category: transactional
+  ptr_suffixes: [mailgun.net]
+  dkim_domains: [mailgun.org]
+  envelope_domains: [mailgun.org, mailgun.net]
+  spf_include: mailgun.org
+  spf_alignable: true
+  dkim_setup: In Mailgun add the sending domain and publish the DKIM TXT record it shows.
+  return_path_setup: Publish the CNAME for the tracking/bounce subdomain Mailgun shows (e.g. email.<domain>).
+
+amazon_ses:
+  name: Amazon SES
+  category: transactional
+  ptr_suffixes: [amazonses.com]
+  dkim_domains: [amazonses.com]
+  envelope_domains: [amazonses.com]
+  spf_include: amazonses.com
+  spf_alignable: true
+  dkim_setup: Verify the domain in Amazon SES with Easy DKIM and publish the three CNAME records.
+  return_path_setup: Configure a custom MAIL FROM domain (e.g. bounce.<domain>) in Amazon SES.
+
+postmark:
+  name: Postmark
+  category: transactional
+  ptr_suffixes: [mtasv.net]
+  dkim_domains: [mtasv.net]
+  envelope_domains: [mtasv.net]
+  spf_include: spf.mtasv.net
+  spf_alignable: true
+  dkim_setup: In Postmark go to Sender Signatures / Domains and publish the DKIM TXT record.
+  return_path_setup: Publish the Return-Path CNAME (pm-bounces.<domain> -> pm.mtasv.net).
+
+brevo:
+  name: Brevo (Sendinblue)
+  category: marketing
+  ptr_suffixes: [sendinblue.com, brevo.com]
+  dkim_domains: [sendinblue.com, brevo.com]
+  envelope_domains: [sendinblue.com, brevo.com]
+  spf_include: spf.brevo.com
+  spf_alignable: false
+  dkim_setup: In Brevo go to Senders, Domains & Dedicated IPs > Domains, authenticate the domain and publish the DKIM record.
+
+hubspot:
+  name: HubSpot
+  category: marketing
+  ptr_suffixes: [hubspotemail.net]
+  dkim_domains: [hubspotemail.net]
+  envelope_domains: [hubspotemail.net]
+  spf_include: null
+  spf_alignable: false
+  dkim_setup: In HubSpot go to Settings > Domains & URLs > Email sending domains and publish the DKIM CNAME records.
+
+salesforce_mc:
+  name: Salesforce Marketing Cloud
+  category: marketing
+  ptr_suffixes: [exacttarget.com]
+  dkim_domains: [exacttarget.com]
+  envelope_domains: [exacttarget.com]
+  spf_include: null
+  spf_alignable: true
+  dkim_setup: Set up a Sender Authentication Package (SAP) or private domain with DKIM in Marketing Cloud.
+
+zendesk:
+  name: Zendesk
+  category: support
+  ptr_suffixes: [zendesk.com]
+  dkim_domains: [zendesk.com]
+  envelope_domains: [zendesk.com]
+  spf_include: mail.zendesk.com
+  spf_alignable: false
+  dkim_setup: In Zendesk Admin Center go to Channels > Email > Digital signature (DKIM) and publish the two CNAME records (zendesk1/zendesk2).
+
+mimecast:
+  name: Mimecast
+  category: gateway
+  ptr_suffixes: [mimecast.com]
+  spf_include: null  # region specific, e.g. eu._netblocks.mimecast.com
+  spf_alignable: true
+  dkim_setup: Configure DKIM signing for the domain in the Mimecast Administration Console (Definitions > DNS Authentication).

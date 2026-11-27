@@ -1,0 +1,63 @@
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+From: postmaster@small-isp.example
+To: dmarc-reports@example.com
+Subject: DMARC Aggregate Report
+Message-ID: <inline-1@small-isp.example>
+
+Hello,
+
+Please find the DMARC report below.
+
+<?xml version="1.0"?>
+<feedback>
+  <report_metadata>
+    <org_name>Yahoo</org_name>
+    <email>dmarchelp@yahooinc.com</email>
+    <report_id>1764000000.592341</report_id>
+    <date_range>
+      <begin>1763942400</begin>
+      <end>1764028799</end>
+    </date_range>
+  </report_metadata>
+  <policy_published>
+    <domain>example.com</domain>
+    <adkim>r</adkim>
+    <aspf>r</aspf>
+    <p>none</p>
+    <pct>100</pct>
+  </policy_published>
+  <record>
+    <row>
+      <source_ip>209.85.220.41</source_ip>
+      <count>2</count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>pass</dkim>
+        <spf>fail</spf>
+        <reason>
+          <type>forwarded</type>
+          <comment>mailing list</comment>
+        </reason>
+      </policy_evaluated>
+    </row>
+    <identifiers>
+      <header_from>example.com</header_from>
+    </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>example.com</domain>
+        <selector>selector1</selector>
+        <result>pass</result>
+      </dkim>
+      <spf>
+        <domain>lists.example.org</domain>
+        <result>pass</result>
+      </spf>
+    </auth_results>
+  </record>
+</feedback>
+
+--
+Reporter

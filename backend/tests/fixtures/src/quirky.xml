@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<feedback>
+  <report_metadata>
+    <org_name>Quirky Mail Corp</org_name>
+    <email>dmarc@quirky.example</email>
+    <report_id> q-7781 </report_id>
+    <date_range>
+      <begin>2025-11-24T00:00:00Z</begin>
+      <end>2025-11-24T23:59:59Z</end>
+    </date_range>
+  </report_metadata>
+  <policy_published>
+    <domain>example.com.</domain>
+    <p>none</p>
+  </policy_published>
+  <record>
+    <row>
+      <source_ip>::ffff:192.0.2.200</source_ip>
+      <count> 7 </count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>fail</dkim>
+        <spf>fail</spf>
+      </policy_evaluated>
+    </row>
+    <identifiers>
+    </identifiers>
+    <auth_results>
+      <spf>
+        <domain>helo.quirky.example</domain>
+        <scope>helo</scope>
+        <result>pass</result>
+      </spf>
+    </auth_results>
+  </record>
+</feedback>

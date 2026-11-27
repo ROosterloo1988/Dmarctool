@@ -1,0 +1,38 @@
+Content-Type: multipart/mixed; boundary="==fixture-boundary=="
+MIME-Version: 1.0
+From: dmarc@quirky.example
+To: dmarc-reports@example.com
+Subject: DMARC report
+Date: Tue, 25 Nov 2025 06:12:00 +0000
+Message-ID: <q-7781@quirky.example>
+
+--==fixture-boundary==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate report.
+--==fixture-boundary==
+Content-Type: text/xml
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="report.xml"
+
+PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTE2Ij8+CjxmZWVkYmFjaz4KICA8cmVw
+b3J0X21ldGFkYXRhPgogICAgPG9yZ19uYW1lPlF1aXJreSBNYWlsIENvcnA8L29yZ19uYW1lPgog
+ICAgPGVtYWlsPmRtYXJjQHF1aXJreS5leGFtcGxlPC9lbWFpbD4KICAgIDxyZXBvcnRfaWQ+IHEt
+Nzc4MSA8L3JlcG9ydF9pZD4KICAgIDxkYXRlX3JhbmdlPgogICAgICA8YmVnaW4+MjAyNS0xMS0y
+NFQwMDowMDowMFo8L2JlZ2luPgogICAgICA8ZW5kPjIwMjUtMTEtMjRUMjM6NTk6NTlaPC9lbmQ+
+CiAgICA8L2RhdGVfcmFuZ2U+CiAgPC9yZXBvcnRfbWV0YWRhdGE+CiAgPHBvbGljeV9wdWJsaXNo
+ZWQ+CiAgICA8ZG9tYWluPmV4YW1wbGUuY29tLjwvZG9tYWluPgogICAgPHA+bm9uZTwvcD4KICA8
+L3BvbGljeV9wdWJsaXNoZWQ+CiAgPHJlY29yZD4KICAgIDxyb3c+CiAgICAgIDxzb3VyY2VfaXA+
+OjpmZmZmOjE5Mi4wLjIuMjAwPC9zb3VyY2VfaXA+CiAgICAgIDxjb3VudD4gNyA8L2NvdW50Pgog
+ICAgICA8cG9saWN5X2V2YWx1YXRlZD4KICAgICAgICA8ZGlzcG9zaXRpb24+bm9uZTwvZGlzcG9z
+aXRpb24+CiAgICAgICAgPGRraW0+ZmFpbDwvZGtpbT4KICAgICAgICA8c3BmPmZhaWw8L3NwZj4K
+ICAgICAgPC9wb2xpY3lfZXZhbHVhdGVkPgogICAgPC9yb3c+CiAgICA8aWRlbnRpZmllcnM+CiAg
+ICA8L2lkZW50aWZpZXJzPgogICAgPGF1dGhfcmVzdWx0cz4KICAgICAgPHNwZj4KICAgICAgICA8
+ZG9tYWluPmhlbG8ucXVpcmt5LmV4YW1wbGU8L2RvbWFpbj4KICAgICAgICA8c2NvcGU+aGVsbzwv
+c2NvcGU+CiAgICAgICAgPHJlc3VsdD5wYXNzPC9yZXN1bHQ+CiAgICAgIDwvc3BmPgogICAgPC9h
+dXRoX3Jlc3VsdHM+CiAgPC9yZWNvcmQ+CjwvZmVlZGJhY2s+Cg==
+
+--==fixture-boundary==--

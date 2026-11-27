@@ -1,0 +1,73 @@
+From: DMARC Failure Reports <ruf-reports@receiver.example>
+To: dmarc-reports@example.com
+Subject: FW: Urgent invoice
+Date: Mon, 24 Nov 2025 10:20:00 +0000
+Message-ID: <ruf-5@receiver.example>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report; boundary="arf-boundary"
+
+--arf-boundary
+Content-Type: text/plain; charset=us-ascii
+
+This is an authentication failure report for an email message received from 203.0.113.66.
+
+--arf-boundary
+Content-Type: message/feedback-report
+
+Feedback-Type: auth-failure
+User-Agent: ReceiverMTA/2.1
+Version: 1
+Original-Mail-From: <bounce@bulk-sender.example>
+Original-Rcpt-To: <j.jansen@receiver.example>
+Arrival-Date: Mon, 24 Nov 2025 11:02:03 +0000
+Source-IP: 203.0.113.66
+Reported-Domain: example.com
+Authentication-Results: mx.receiver.example; dmarc=fail (p=none) header.from=example.com; spf=fail smtp.mailfrom=bulk-sender.example; dkim=pass header.d=bulk-sender.example
+Auth-Failure: dmarc
+Delivery-Result: delivered
+Identity-Alignment: none
+
+--arf-boundary
+Content-Type: message/rfc822
+
+Received: from mx.receiver.example (mx.receiver.example [198.51.100.5])
+  by mailstore.receiver.example with LMTP; Mon, 24 Nov 2025 11:02:05 +0000
+Received: from mail.bulk-sender.example (mail.bulk-sender.example [203.0.113.66])
+  by mx.receiver.example (Postfix) with ESMTPS id 4XyZ for <j.jansen@receiver.example>; Mon, 24 Nov 2025 11:02:03 +0000
+Received: from [10.1.2.3] (helo=workstation) by mail.bulk-sender.example with esmtpa; Mon, 24 Nov 2025 11:02:00 +0000
+Authentication-Results: mx.receiver.example; dkim=pass header.d=bulk-sender.example header.s=k1; spf=fail smtp.mailfrom=bulk-sender.example; dmarc=fail (p=none) header.from=example.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=bulk-sender.example; s=k1; h=from:to:subject; bh=abc=; b=def=
+From: "finance@example.com" <noreply@example.com>
+Reply-To: payments@collect-invoices.example
+To: "Jan Jansen" <j.jansen@receiver.example>
+Subject: Outstanding invoice 2025-1187
+Date: Mon, 24 Nov 2025 11:01:59 +0000
+Message-ID: <a1b2c3@bulk-sender.example>
+X-Mailer: MassMailer Pro 7.2
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Dear customer, please pay invoice 2025-1187 via https://pay.collect-invoices.example/inv?id=1187
+--alt
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Dear customer,</p><p>Please <a href="https://pay.collect-invoices.example/inv?id=1187">pay invoice 2025-1187</a>.
+Questions? <a href="https://www.example.com/contact">Contact us</a> or <a href="mailto:x@example.com">mail</a>.</p>
+<script>alert(1)</script></body></html>
+--alt--
+
+--outer
+Content-Type: application/pdf; name="invoice-2025-1187.pdf"
+Content-Disposition: attachment; filename="invoice-2025-1187.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJWZha2UgcGRmCg==
+--outer--
+
+--arf-boundary--

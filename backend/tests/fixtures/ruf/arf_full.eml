@@ -1,0 +1,46 @@
+From: DMARC Failure Reports <ruf-reports@receiver.example>
+To: dmarc-reports@example.com
+Subject: FW: Urgent invoice
+Date: Mon, 24 Nov 2025 10:20:00 +0000
+Message-ID: <ruf-1@receiver.example>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report; boundary="arf-boundary"
+
+--arf-boundary
+Content-Type: text/plain; charset=us-ascii
+
+This is an authentication failure report for an email message received from 203.0.113.66.
+
+--arf-boundary
+Content-Type: message/feedback-report
+
+Feedback-Type: auth-failure
+User-Agent: ReceiverMTA/2.1
+Version: 1
+Original-Mail-From: <bounce@spoofer.example>
+Original-Rcpt-To: <victim@receiver.example>
+Arrival-Date: Mon, 24 Nov 2025 10:15:02 +0000
+Source-IP: 203.0.113.66
+Reported-Domain: example.com
+Authentication-Results: mx.receiver.example; dmarc=fail (p=none) header.from=example.com; spf=fail smtp.mailfrom=spoofer.example; dkim=none
+Auth-Failure: dmarc
+Delivery-Result: delivered
+Identity-Alignment: none
+
+--arf-boundary
+Content-Type: message/rfc822
+Content-Disposition: inline
+
+Received: from unknown (HELO spoofer.example) (203.0.113.66)
+  by mx.receiver.example with SMTP; Mon, 24 Nov 2025 10:15:02 +0000
+From: "Finance" <finance@example.com>
+To: victim@receiver.example
+Subject: Urgent invoice
+Date: Mon, 24 Nov 2025 10:15:00 +0000
+Message-ID: <spoof-123@spoofer.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Please pay the attached invoice to IBAN XX00 0000 0000 00.
+
+--arf-boundary--
