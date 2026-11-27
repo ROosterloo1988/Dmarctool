@@ -2,7 +2,7 @@
 
 Leest DMARC-aggregate reports (RUA) en forensic/failure reports (RUF) in, slaat ze op in
 PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
-`p=quarantine` / `p=reject` gaan voor tenazenergy.com.
+`p=quarantine` / `p=reject` gaan voor je eigen domeinen.
 
 > **Status: alle 5 fases zijn gebouwd** — parser, ophalen via Graph, DNS-controle en
 > verrijking, webinterface met SSO en meldingen per mail.
@@ -21,8 +21,6 @@ PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
    ```
    Vul in `.env` in:
    - `POSTGRES_PASSWORD`;
-   - de Graph-gegevens: `DMARC_GRAPH_TENANT_ID`, `DMARC_GRAPH_CLIENT_ID` en het
-     certificaat (in `./secrets/`) of het secret;
    - de portal: `DMARC_SECRET_KEY` (de uitvoer van het commando hierboven),
      `DMARC_OIDC_CLIENT_ID` en `DMARC_OIDC_CLIENT_SECRET`;
    - `FORWARDED_ALLOW_IPS`: het subnet van de Application Gateway.
@@ -37,15 +35,18 @@ PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
    ```
    Zet het alleen aan als het nodig is, met `DMARC_LOCAL_LOGIN_ENABLED=true` in `.env`,
    gevolgd door `docker compose up -d api`.
-5. **Inloggen:** open https://dmarcportal.tenazenergy.com en kies **Sign in with
+5. **Inloggen:** open https://dmarc.example.com en kies **Sign in with
    Microsoft**. Daarna, onder **Settings**:
-   - domein `tenazenergy.com` toevoegen;
-   - het mailboxadres instellen.
+   - het domein toevoegen;
+   - onder **Microsoft 365 connection**: tenant ID, client ID en client secret. Het secret
+     wordt versleuteld opgeslagen en is daarna niet meer zichtbaar;
+   - het mailboxadres instellen;
+   - **Test connection** kiezen.
 6. **Meldingen instellen:** ga in de UI naar **Settings → Notifications**, vul daar de
    ontvangers in en kies **Send test mail**.
 7. **Mailbox testen:**
    ```bash
-   docker compose run --rm cli graph-check --other-mailbox iemand@tenazenergy.com
+   docker compose run --rm cli graph-check --other-mailbox iemand@example.com
    ```
    Daarna in de UI: **Mail processing → Fetch mail → Run now**.
 
@@ -77,6 +78,9 @@ PostgreSQL en toont de resultaten in een webinterface. Het doel is veilig naar
 | Users & audit | Gebruikers uitschakelen, rollen van lokale accounts, en het auditlog (logins, wijzigingen, exports) |
 
 **Beveiliging:**
+- Het Graph client secret staat versleuteld in de database (Fernet, met een sleutel
+  afgeleid van `DMARC_SECRET_KEY`). De API geeft het nooit terug, en het auditlog
+  registreert alleen dát het gewijzigd is.
 - Sessiecookie: HttpOnly, Secure, SameSite=Lax, 8 uur geldig.
 - CSRF-token op alle wijzigende verzoeken.
 - Strikte Content-Security-Policy, X-Frame-Options en HSTS.
@@ -231,11 +235,11 @@ Daar staat ook de knop **Send test mail** en de lijst met recent verstuurde meld
 - **Dagtotalen per domein en bron** (`daily_stat`) voor de trendgrafieken. Die blijven ook
   na de purge van de details (2 jaar) bewaard.
 
-**Analyse** (`dmarc analyze tenazenergy.com`, straks het dashboard):
+**Analyse** (`dmarc analyze example.com`, straks het dashboard):
 - **Overzicht per bron:** volume, % DMARC-pass, SPF- en DKIM-pass, alignment, gebruikte
   bounce- en DKIM-domeinen en selectors.
 - **Aanbevelingen in gewone taal.** Voorbeelden:
-  - *"Flowmailer sends ~1,200 mails/week on behalf of tenazenergy.com; 100% fails DMARC —
+  - *"Flowmailer sends ~1,200 mails/week on behalf of example.com; 100% fails DMARC —
     DKIM is signed with flowmailer.net instead of your own domain … → Set up DKIM with your
     own domain: …"*
   - *"Add include:spf.protection.outlook.com to the SPF record"*, met een waarschuwing als
@@ -261,7 +265,7 @@ Daar staat ook de knop **Send test mail** en de lijst met recent verstuurde meld
 Classificeren gaat straks in de UI; nu via de CLI:
 
 ```bash
-docker compose run --rm cli classify tenazenergy.com sender:flowmailer legit --note "Facturen"
+docker compose run --rm cli classify example.com sender:flowmailer legit --note "Facturen"
 ```
 
 **Netwerk vanaf de Docker-host:** DNS naar de resolver (standaard de resolver van de host,
@@ -358,7 +362,7 @@ nooit de productiedatabase.
 | `dmarc parse <bestanden/mappen>` | Parsen en als JSON tonen, zonder database |
 | `dmarc import <bestanden/mappen>` | Importeren in de database |
 | `dmarc migrate` | Databasemigraties uitvoeren (Alembic) |
-| `dmarc domain add tenazenergy.com [--parked]` | Domein toevoegen dat bewaakt wordt |
+| `dmarc domain add example.com [--parked]` | Domein toevoegen dat bewaakt wordt |
 | `dmarc purge` | RUF en oude RUA verwijderen volgens de bewaartermijn |
 | `dmarc settings [set\|reset] [key] [value]` | Instellingen tonen of wijzigen (mailbox, mappen, interval) |
 | `dmarc graph-check [--other-mailbox x]` | App-registratie en mailboxrechten stap voor stap controleren |
@@ -372,6 +376,7 @@ nooit de productiedatabase.
 | `dmarc classify <domein> <bron> legit\|unknown\|abuse` | Een bron markeren |
 | `dmarc user list\|add\|password\|disable\|enable [naam] [--role]` | Lokale noodaccounts beheren |
 | `dmarc api [--port 8080]` | De webinterface/API starten (doet de `api`-container) |
+| `dmarc graph-secret status\|set\|delete` | Graph client secret beheren; bij `set` wordt de waarde van stdin gelezen |
 
 ## Configuratie
 
@@ -409,6 +414,7 @@ Secrets staan nooit in de code.
   instellingen, exports en het inzien van RUF.
 - **`alert_state`**: welke problemen al gemeld zijn en of ze opgelost zijn.
 - **`alert_event`**: de meldingen en hun verzendstatus.
+- **`secret_setting`**: versleutelde, write-only secrets, zoals het Graph client secret.
 
 ## Testfixtures
 

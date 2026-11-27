@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     # --- Web UI / authentication -------------------------------------------------------
     secret_key: SecretStr | None = None  # signs session cookies; required for the API
-    public_url: str = "https://dmarcportal.tenazenergy.com"
+    public_url: str = "http://localhost:8080"  # external URL of the portal (links in mails, SSO redirect)
     session_hours: int = 8
     cookie_secure: bool = True  # set false only for local http testing
     oidc_tenant_id: str | None = None  # defaults to graph_tenant_id

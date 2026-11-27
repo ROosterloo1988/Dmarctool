@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
@@ -61,43 +61,85 @@ class GraphMessage:
 # Token provider
 # --------------------------------------------------------------------------------------
 
-def msal_token_provider(settings: Settings) -> Callable[[], str]:
+@dataclass(frozen=True)
+class GraphCredentials:
+    tenant_id: str | None
+    client_id: str | None
+    client_secret: str | None = field(default=None, repr=False)
+    certificate_path: str | None = None
+    credential_source: str = "none"  # portal | environment-certificate | environment-secret | none
+
+    @property
+    def fingerprint(self) -> str:
+        import hashlib
+
+        raw = f"{self.tenant_id}|{self.client_id}|{self.client_secret}|{self.certificate_path}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def graph_credentials(session, settings: Settings | None = None) -> GraphCredentials:
+    """Effective credentials: values entered in the admin portal win over the environment.
+
+    Credential order: client secret stored in the portal, then DMARC_GRAPH_CERTIFICATE_PATH,
+    then DMARC_GRAPH_CLIENT_SECRET.
+    """
+    from dmarc.appsettings import get_all
+    from dmarc.secrets_store import get_secret
+
+    s = settings or get_settings()
+    values = get_all(session, s)
+    tenant, client = values["graph.tenant_id"]["value"], values["graph.client_id"]["value"]
+    stored = get_secret(session, "graph.client_secret", s)
+    if stored:
+        return GraphCredentials(tenant, client, stored, None, "portal")
+    if s.graph_certificate_path:
+        return GraphCredentials(tenant, client, None, s.graph_certificate_path, "environment-certificate")
+    if s.graph_client_secret:
+        return GraphCredentials(tenant, client, s.graph_client_secret.get_secret_value(), None, "environment-secret")
+    return GraphCredentials(tenant, client, None, None, "none")
+
+
+def msal_token_provider(settings: Settings, creds: GraphCredentials | None = None) -> Callable[[], str]:
     """Return a callable that yields a (cached) app-only access token."""
     import msal
 
-    if not (settings.graph_tenant_id and settings.graph_client_id):
-        raise GraphNotConfigured("DMARC_GRAPH_TENANT_ID and DMARC_GRAPH_CLIENT_ID must be set")
+    if creds is None:  # environment only (no database), e.g. scripts
+        secret = settings.graph_client_secret.get_secret_value() if settings.graph_client_secret else None
+        creds = GraphCredentials(settings.graph_tenant_id, settings.graph_client_id, secret,
+                                 settings.graph_certificate_path,
+                                 "environment-certificate" if settings.graph_certificate_path else "environment-secret")
+    if not (creds.tenant_id and creds.client_id):
+        raise GraphNotConfigured("Graph tenant ID and client ID are not set (Settings > Microsoft 365 connection)")
 
-    if settings.graph_certificate_path:
-        credential = _certificate_credential(settings)
-    elif settings.graph_client_secret:
-        credential = settings.graph_client_secret.get_secret_value()
+    if creds.certificate_path and not creds.client_secret:
+        credential = _certificate_credential(settings, creds.certificate_path)
+    elif creds.client_secret:
+        credential = creds.client_secret
     else:
-        raise GraphNotConfigured("set DMARC_GRAPH_CERTIFICATE_PATH or DMARC_GRAPH_CLIENT_SECRET")
+        raise GraphNotConfigured("no Graph client secret or certificate configured (Settings > Microsoft 365 connection)")
 
     app = msal.ConfidentialClientApplication(
-        client_id=settings.graph_client_id,
+        client_id=creds.client_id,
         client_credential=credential,
-        authority=f"{settings.graph_authority_host.rstrip('/')}/{settings.graph_tenant_id}",
+        authority=f"{settings.graph_authority_host.rstrip('/')}/{creds.tenant_id}",
     )
 
     def get_token() -> str:
         result = app.acquire_token_for_client(scopes=[GRAPH_SCOPE])  # cached by msal until expiry
         if "access_token" not in result:
-            raise GraphError(
-                f"token request failed: {result.get('error')}: {result.get('error_description', '').splitlines()[0:1]}",
-                code=result.get("error"),
-            )
+            desc = (result.get("error_description") or "").splitlines()
+            raise GraphError(f"token request failed: {result.get('error')}: {desc[0] if desc else ''}",
+                             code=result.get("error"))
         return result["access_token"]
 
     return get_token
 
 
-def _certificate_credential(settings: Settings) -> dict[str, str]:
+def _certificate_credential(settings: Settings, path: str) -> dict[str, str]:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
 
-    pem = open(settings.graph_certificate_path, "rb").read()
+    pem = open(path, "rb").read()
     password = settings.graph_certificate_password.get_secret_value().encode() if settings.graph_certificate_password else None
     key = serialization.load_pem_private_key(pem, password=password)
     cert = x509.load_pem_x509_certificate(pem)

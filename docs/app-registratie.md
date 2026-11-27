@@ -43,7 +43,7 @@ het vervangt de oudere Application Access Policies.
 **Certificaat.** Maak het aan op de Docker-host, in de projectmap:
 
 ```bash
-openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes -keyout key.pem -out cert.pem -subj "/CN=dmarc-graph-tenazenergy"
+openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes -keyout key.pem -out cert.pem -subj "/CN=dmarc-graph"
 ```
 
 ```bash
@@ -66,13 +66,13 @@ Secret ID) naar `DMARC_GRAPH_CLIENT_SECRET` in `.env`.
 
 ### 1.3 Toegang tot de gedeelde mailbox (Exchange Online PowerShell)
 
-Dit voert een Exchange-beheerder uit. Vervang `dmarc@tenazenergy.com` door het echte adres.
+Dit voert een Exchange-beheerder uit. Vervang `dmarc@example.com` door het echte adres.
 
 ```powershell
 Connect-ExchangeOnline
 
 $AppId   = "<Application (client) ID>"
-$Mailbox = "dmarc@tenazenergy.com"
+$Mailbox = "dmarc@example.com"
 
 # Object ID van de *Enterprise application* (service principal), NIET die van de app-registratie!
 # Te vinden onder Entra -> Enterprise applications -> DMARC-rapportage (mailbox) -> Object ID.
@@ -88,7 +88,7 @@ New-ManagementRoleAssignment -App $AppId -Role "Application Mail.Send"      -Cus
 # Controle: InScope moet True zijn voor de DMARC-mailbox...
 Test-ServicePrincipalAuthorization -Identity $AppId -Resource $Mailbox | Format-Table
 # ...en False voor een willekeurige andere mailbox:
-Test-ServicePrincipalAuthorization -Identity $AppId -Resource "iemand@tenazenergy.com" | Format-Table
+Test-ServicePrincipalAuthorization -Identity $AppId -Resource "iemand@example.com" | Format-Table
 ```
 
 Het kan 30 minuten tot 2 uur duren voordat de rechten actief zijn.
@@ -104,33 +104,55 @@ Je kunt het mailboxadres in de UI wijzigen (setting `mailbox.address`). Pas dan 
 de scope in Exchange aan, anders krijgt de worker een 403-fout:
 
 ```powershell
-Set-ManagementScope -Identity "DMARC mailbox" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'nieuw-adres@tenazenergy.com'"
+Set-ManagementScope -Identity "DMARC mailbox" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'nieuw-adres@example.com'"
 ```
 
 ### 1.5 Configureren en testen
 
-Netwerk: de Azure-host moet uitgaand HTTPS (443) kunnen maken naar
+Netwerk: de Docker-host moet uitgaand HTTPS (443) kunnen maken naar
 `login.microsoftonline.com` en `graph.microsoft.com`.
 
-Vul eerst `.env` in: `DMARC_GRAPH_TENANT_ID`, `DMARC_GRAPH_CLIENT_ID` en het certificaat of
-het secret. Voer daarna uit:
+**In het portaal (aanbevolen):** ga naar **Settings → Microsoft 365 connection** en vul in:
+- **Directory (tenant) ID**;
+- **Application (client) ID**;
+- **Client secret**: plak de *Value* van het secret.
+
+Hoe het secret wordt bewaard:
+- versleuteld in de database, met een sleutel die is afgeleid van `DMARC_SECRET_KEY`;
+- het is daarna voor niemand meer zichtbaar, ook niet voor beheerders;
+- vervangen of verwijderen kan wel;
+- wijzigingen werken direct, zonder herstart.
+
+Daarna:
+- vul onder **Mailbox** het adres van de gedeelde mailbox in;
+- kies **Test connection**.
+
+> Verander je `DMARC_SECRET_KEY`, dan kan het opgeslagen secret niet meer ontsleuteld worden.
+> Het portaal meldt dat; vul het secret dan opnieuw in.
+
+**Alternatief: via `.env`.** Zet `DMARC_GRAPH_TENANT_ID` en `DMARC_GRAPH_CLIENT_ID`, plus
+`DMARC_GRAPH_CERTIFICATE_PATH` of `DMARC_GRAPH_CLIENT_SECRET`, en voer `docker compose up -d`
+uit (niet `restart`).
+- Waarden in het portaal gaan vóór `.env`.
+- Volgorde van de credential: secret uit het portaal, dan het certificaat uit `.env`, dan
+  het secret uit `.env`.
+- Het secret kan ook via de CLI, zonder dat het in de shell-history komt:
+  `docker compose run --rm -T cli graph-secret set < bestand-met-secret`.
+
+Controle via de CLI:
 
 ```bash
-docker compose run --rm cli settings set mailbox.address dmarc@tenazenergy.com
-```
-
-```bash
-docker compose run --rm cli graph-check --other-mailbox iemand@tenazenergy.com
+docker compose run --rm cli graph-check --other-mailbox iemand@example.com
 ```
 
 Verwachte uitvoer:
 
 ```
-[ OK ] access token obtained (tenant id, client id and credential are valid)
-[ OK ] read access to 'Inbox' in dmarc@tenazenergy.com (10+ messages waiting)
+[ OK ] access token obtained (credential from: portal)
+[ OK ] read access to 'Inbox' in dmarc@example.com (10+ messages waiting)
 [ -- ] folder 'Verwerkt' does not exist yet; it is created on the first fetch
 [ -- ] folder 'Fout' does not exist yet; it is created on the first fetch
-[ OK ] no access to iemand@tenazenergy.com (access is correctly restricted)
+[ OK ] no access to iemand@example.com (access is correctly restricted)
 ```
 
 | Melding | Oorzaak |
@@ -150,10 +172,10 @@ Verwachte uitvoer:
    |---|---|
    | Name | `DMARC-rapportage (portal)` |
    | Supported account types | Single tenant |
-   | Redirect URI | platform **Web**, `https://dmarcportal.tenazenergy.com/auth/callback` |
+   | Redirect URI | platform **Web**, `https://dmarc.example.com/auth/callback` |
 
    Bij **Authentication** zet je de *Front-channel logout URL* op
-   `https://dmarcportal.tenazenergy.com/auth/logged-out`. Laat *Access tokens* en *ID tokens*
+   `https://dmarc.example.com/auth/logged-out`. Laat *Access tokens* en *ID tokens*
    (implicit grant) **uit**: de portal gebruikt de authorization-code flow met PKCE.
 
 2. Ga naar **Certificates & secrets** en maak een **client secret** aan. De waarde wordt
@@ -193,17 +215,17 @@ Wijzig je de rol van iemand in Entra, dan geldt die bij de volgende login.
 
 ### 2.1 Azure Application Gateway
 
-De Application Gateway handelt TLS af met het wildcard-certificaat `*.tenazenergy.com` en
+De Application Gateway handelt TLS af met het wildcard-certificaat `*.example.com` en
 stuurt het verkeer via HTTP door naar de `api`-container op de Docker-host.
 
 | Onderdeel | Instelling |
 |---|---|
-| Listener | HTTPS 443, hostname `dmarcportal.tenazenergy.com`, wildcard-certificaat (bij voorkeur uit Key Vault) |
+| Listener | HTTPS 443, hostname `dmarc.example.com`, wildcard-certificaat (bij voorkeur uit Key Vault) |
 | Backend pool | Het privé-IP van de Docker-host |
-| Backend setting | HTTP, poort `8080`, *Override with new host name*: **nee** (de app moet `dmarcportal.tenazenergy.com` als Host zien) |
+| Backend setting | HTTP, poort `8080`, *Override with new host name*: **nee** (de app moet `dmarc.example.com` als Host zien) |
 | Health probe | `GET /healthz`, verwacht 200 |
 | Rewrite (optioneel) | De App Gateway zet zelf al `X-Forwarded-Proto` en `X-Forwarded-For`; de app vertrouwt die alleen van het subnet van de gateway |
 | Toegang | Alleen een privé-frontend-IP, of een WAF-/NSG-regel die alleen interne netwerken en de VPN toelaat |
 
-DNS: zet een A-record voor `dmarcportal.tenazenergy.com` in de interne zone, of als
+DNS: zet een A-record voor `dmarc.example.com` in de interne zone, of als
 split-horizon, naar het frontend-IP van de gateway.

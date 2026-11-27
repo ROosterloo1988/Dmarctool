@@ -48,7 +48,7 @@ def session(engine):
         conn.execute(text(
             "TRUNCATE auth_result, aggregate_record, aggregate_report, forensic_report, inbound_message, domain, "
             "app_setting, job_run, ip_info, dns_check, daily_stat, source_classification, app_user, audit_log, "
-            "alert_state, alert_event "
+            "alert_state, alert_event, secret_setting "
             "RESTART IDENTITY CASCADE"
         ))
     with Session(engine) as s:

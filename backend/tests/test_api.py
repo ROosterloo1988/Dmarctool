@@ -27,6 +27,7 @@ def api_settings(settings):
     settings.secret_key = SecretStr("s" * 40)
     settings.cookie_secure = False
     settings.local_login_enabled = True
+    settings.public_url = "https://dmarc.example.com"
     settings.analysis_days = 5000  # fixtures are from 2025
     settings.min_report_days = 1
     return settings
@@ -205,7 +206,7 @@ class FakeOAuth:
 
 
 def entra_claims(**kw):
-    return {"tid": "tenant-1", "oid": "oid-1", "preferred_username": "jan@tenaz.example", "name": "Jan",
+    return {"tid": "tenant-1", "oid": "oid-1", "preferred_username": "jan@corp.example", "name": "Jan",
             "roles": ["DMARC.Viewer"]} | kw
 
 
@@ -216,11 +217,11 @@ def test_entra_sign_in(app, api_settings, session):
     app.state.oauth = FakeOAuth(entra_claims())
     c = TestClient(app, follow_redirects=False)
     r = c.get("/auth/login")
-    assert r.headers["location"] == "https://login.example/authorize?redirect_uri=https://dmarcportal.tenazenergy.com/auth/callback"
+    assert r.headers["location"] == "https://login.example/authorize?redirect_uri=https://dmarc.example.com/auth/callback"
     r = c.get("/auth/callback?code=x&state=y")
     assert r.status_code == 303 and r.headers["location"] == "/"
     me = c.get("/api/me").json()
-    assert (me["role"], me["email"], me["is_local"]) == ("viewer", "jan@tenaz.example", False)
+    assert (me["role"], me["email"], me["is_local"]) == ("viewer", "jan@corp.example", False)
 
     # Role is updated from the token at every sign-in.
     app.state.oauth.client.claims = entra_claims(roles=["DMARC.Admin", "DMARC.Viewer"])
@@ -396,8 +397,8 @@ def test_forensic_viewer_forbidden(viewer, data):
 def test_settings(admin, session):
     s = admin.get("/api/settings").json()
     assert s["mailbox.address"]["source"] == "environment"
-    r = admin.put("/api/settings/mailbox.address", json={"value": "dmarc@tenazenergy.com"})
-    assert r.json() == {"key": "mailbox.address", "value": "dmarc@tenazenergy.com"}
+    r = admin.put("/api/settings/mailbox.address", json={"value": "dmarc@example.com"})
+    assert r.json() == {"key": "mailbox.address", "value": "dmarc@example.com"}
     assert admin.get("/api/settings").json()["mailbox.address"]["updated_by"] == "admin"
     assert admin.put("/api/settings/mailbox.address", json={"value": "nope"}).status_code == 422
     assert admin.put("/api/settings/graph.client_secret", json={"value": "x"}).status_code == 422
@@ -407,12 +408,12 @@ def test_settings(admin, session):
 
 
 def test_domains_management(admin, session):
-    assert admin.post("/api/domains", json={"name": "Tenazenergy.com"}).json() == {"name": "tenazenergy.com"}
-    assert admin.post("/api/domains", json={"name": "tenazenergy.com"}).status_code == 409
+    assert admin.post("/api/domains", json={"name": "Example.com"}).json() == {"name": "example.com"}
+    assert admin.post("/api/domains", json={"name": "example.com"}).status_code == 409
     assert admin.post("/api/domains", json={"name": "not a domain"}).status_code == 422
-    assert admin.patch("/api/domains/tenazenergy.com", json={"parked": True}).json()["parked"] is True
+    assert admin.patch("/api/domains/example.com", json={"parked": True}).json()["parked"] is True
     assert session.scalars(select(m.JobRun).where(m.JobRun.job == "dnscheck", m.JobRun.status == "queued")).first()
-    assert admin.delete("/api/domains/tenazenergy.com").status_code == 204
+    assert admin.delete("/api/domains/example.com").status_code == 204
     assert admin.get("/api/domains").json() == []
 
 
@@ -453,3 +454,44 @@ def test_notifications_api(app, admin, viewer, session, mailbox_factory, fake_gr
     items = admin.get("/api/notifications").json()["items"]
     assert items[0]["kind"] == "test" and items[0]["sent_at"]
     assert viewer.get("/api/notifications").status_code == 403
+
+
+GRAPH_SECRET = "Xy7~verySecretValue.123"
+
+
+def test_graph_connection_admin(app, admin, viewer, session, monkeypatch, fake_graph):
+    status = admin.get("/api/graph").json()
+    assert status["ready"] is False and status["client_secret"]["stored"] is False
+    assert admin.put("/api/settings/graph.tenant_id", json={"value": "11111111-2222-3333-4444-555555555555"}).status_code == 200
+    assert admin.put("/api/settings/graph.client_id", json={"value": "66666666-7777-8888-9999-000000000000"}).status_code == 200
+    r = admin.put("/api/graph/secret", json={"value": GRAPH_SECRET})
+    assert r.status_code == 200 and GRAPH_SECRET not in r.text
+    st = admin.get("/api/graph")
+    assert GRAPH_SECRET not in st.text
+    st = st.json()
+    assert st["ready"] and st["credential_source"] == "portal"
+    assert st["client_secret"]["stored"] and st["client_secret"]["readable"] and st["client_secret"]["updated_by"] == "admin"
+    # The secret appears nowhere: not in settings, not in the audit log.
+    assert GRAPH_SECRET not in admin.get("/api/settings").text
+    assert GRAPH_SECRET not in admin.get("/api/audit").text
+    assert "secret_set" in admin.get("/api/audit").text
+
+    # Viewers can neither read the status nor change anything.
+    assert viewer.get("/api/graph").status_code == 403
+    assert viewer.put("/api/graph/secret", json={"value": "x"}).status_code == 403
+    assert viewer.delete("/api/graph/secret").status_code == 403
+
+    # Connection test with the stored credentials (token + Graph mocked).
+    import httpx
+
+    from dmarc import graph as graph_mod
+    seen = []
+    monkeypatch.setattr(graph_mod, "msal_token_provider", lambda s, creds: seen.append(creds) or (lambda: "token"))
+    app.state.graph_http = httpx.Client(transport=fake_graph.transport())
+    admin.put("/api/settings/mailbox.address", json={"value": "dmarc@example.com"})
+    test = admin.post("/api/graph/test").json()
+    assert test["ok"] and [x["step"] for x in test["steps"]][:2] == ["Access token", "Read access"]
+    assert seen[0].client_secret == GRAPH_SECRET and seen[0].credential_source == "portal"
+
+    assert admin.delete("/api/graph/secret").json()["client_secret"]["stored"] is False
+    assert admin.put("/api/graph/secret", json={"value": ""}).status_code == 422

@@ -111,5 +111,5 @@ def test_not_configured(settings):
         msal_token_provider(settings)
     settings.graph_tenant_id = "t"
     settings.graph_client_id = "c"
-    with pytest.raises(GraphNotConfigured, match="CERTIFICATE_PATH or"):
+    with pytest.raises(GraphNotConfigured, match="secret or certificate"):
         msal_token_provider(settings)

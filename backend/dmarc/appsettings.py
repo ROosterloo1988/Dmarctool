@@ -34,6 +34,28 @@ def _email(v: Any) -> str | None:
     return v
 
 
+_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+_TENANT_DOMAIN = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$", re.IGNORECASE)
+
+
+def _guid(v: Any) -> str | None:
+    if v is None or str(v).strip() == "":
+        return None
+    v = str(v).strip().lower()
+    if not _GUID.match(v):
+        raise SettingError("must be a GUID like 00000000-0000-0000-0000-000000000000")
+    return v
+
+
+def _tenant(v: Any) -> str | None:
+    if v is None or str(v).strip() == "":
+        return None
+    v = str(v).strip().lower()
+    if not (_GUID.match(v) or _TENANT_DOMAIN.match(v)):
+        raise SettingError("must be the Directory (tenant) ID (a GUID) or the tenant domain, e.g. contoso.onmicrosoft.com")
+    return v
+
+
 def _folder(v: Any) -> str:
     v = str(v or "").strip().strip("/")
     if not v or len(v) > 255 or any(not seg.strip() for seg in v.split("/")):
@@ -111,6 +133,8 @@ DEFINITIONS: dict[str, SettingDef] = {
         SettingDef("mailbox.poll_minutes", "mailbox_poll_minutes", _int_range(1, 1440), "Fetch interval in minutes"),
         SettingDef("mailbox.batch_size", "mailbox_batch_size", _int_range(1, 1000), "Maximum messages per run"),
         SettingDef("mailbox.enabled", "mailbox_enabled", _bool, "Fetch mail automatically"),
+        SettingDef("graph.tenant_id", "graph_tenant_id", _tenant, "Directory (tenant) ID of the app registration"),
+        SettingDef("graph.client_id", "graph_client_id", _guid, "Application (client) ID of the app registration"),
         SettingDef("notify.enabled", "notify_enabled", _bool, "Send e-mail notifications"),
         SettingDef("notify.recipients", "notify_recipients", _email_list, "Recipients of notifications"),
         SettingDef("notify.digest_hour_utc", "notify_digest_hour_utc", _int_range(0, 23),

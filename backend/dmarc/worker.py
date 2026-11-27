@@ -38,14 +38,23 @@ WORKER_LOCK_ID = 0x444D41524331  # "DMARC1"
 JOBS = ("fetch", "enrich", "dnscheck", "geoip", "purge", "alerts")
 
 
-def default_mailbox_factory(settings: Settings) -> MailboxFactory:
-    token = None
+def default_mailbox_factory(settings: Settings, sessions: sessionmaker[Session]) -> MailboxFactory:
+    """Creates Graph clients with the current credentials (portal settings first, then environment).
+
+    Credentials are re-read on every use, so changes in the admin portal take effect without a restart;
+    the token provider (and its token cache) is only rebuilt when they actually change.
+    """
+    from dmarc.graph import graph_credentials
+
+    cache: dict = {"fingerprint": None, "token": None}
 
     def factory(address: str) -> GraphMailbox:
-        nonlocal token
-        if token is None:
-            token = msal_token_provider(settings)
-        return GraphMailbox(address, token, settings)
+        with sessions() as session:
+            creds = graph_credentials(session, settings)
+        if cache["fingerprint"] != creds.fingerprint:
+            cache["token"] = msal_token_provider(settings, creds)
+            cache["fingerprint"] = creds.fingerprint
+        return GraphMailbox(address, cache["token"], settings)
 
     return factory
 
@@ -63,7 +72,7 @@ class Worker:
         self.engine = engine
         self.settings = settings or get_settings()
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
-        self.mailbox_factory = mailbox_factory or default_mailbox_factory(self.settings)
+        self.mailbox_factory = mailbox_factory or default_mailbox_factory(self.settings, self.sessions)
         self.now = now
         self.resolver = resolver
         self.geoip_downloader = geoip_downloader

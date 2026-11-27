@@ -27,7 +27,7 @@ export function Dashboard() {
       <Card title="Welcome">
         <Empty>
           No domains are monitored yet.{" "}
-          {isAdmin ? <Link to="/settings">Add tenazenergy.com under Settings.</Link> : "Ask an administrator to add one."}
+          {isAdmin ? <Link to="/settings">Add example.com under Settings.</Link> : "Ask an administrator to add one."}
         </Empty>
       </Card>
     );

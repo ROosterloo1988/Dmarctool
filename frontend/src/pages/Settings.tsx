@@ -33,9 +33,9 @@ function SettingRow({ k, entry, type, help }: { k: string; entry: SettingEntry; 
   useEffect(() => setValue(show(entry.value)), [entry.value]);
   const save = useMutation({
     mutationFn: (v: unknown) => put(`/api/settings/${k}`, { value: v }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["settings"] }); qc.invalidateQueries({ queryKey: ["graph"] }); },
   });
-  const reset = useMutation({ mutationFn: () => del(`/api/settings/${k}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }) });
+  const reset = useMutation({ mutationFn: () => del(`/api/settings/${k}`), onSuccess: () => { qc.invalidateQueries({ queryKey: ["settings"] }); qc.invalidateQueries({ queryKey: ["graph"] }); } });
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save.mutate(type === "number" ? Number(value) : type === "bool" ? value === "true" : value);
@@ -49,9 +49,9 @@ function SettingRow({ k, entry, type, help }: { k: string; entry: SettingEntry; 
         {type === "bool" ? (
           <select id={k} value={value} onChange={(e) => setValue(e.target.value)}><option value="true">Yes</option><option value="false">No</option></select>
         ) : type === "list" ? (
-          <textarea id={k} rows={2} value={value} onChange={(e) => setValue(e.target.value)} style={{ maxWidth: 520 }} placeholder="it@tenazenergy.com, security@tenazenergy.com" />
+          <textarea id={k} rows={2} value={value} onChange={(e) => setValue(e.target.value)} style={{ maxWidth: 520 }} placeholder="it@example.com, security@example.com" />
         ) : (
-          <input id={k} type={type} value={value} onChange={(e) => setValue(e.target.value)} style={{ minWidth: 280 }} />
+          <input id={k} type={type} value={value} onChange={(e) => setValue(e.target.value)} style={{ minWidth: 340 }} />
         )}
         <button className="btn btn-primary" type="submit" disabled={save.isPending}>Save</button>
         {entry.source === "database" && <button className="btn btn-ghost" type="button" onClick={() => reset.mutate()}>Reset to default ({show(entry.default) || "empty"})</button>}
@@ -104,6 +104,78 @@ function Notifications({ settings }: { settings: Record<string, SettingEntry> })
   );
 }
 
+interface GraphStatus {
+  tenant_id: SettingEntry; client_id: SettingEntry;
+  client_secret: { stored: boolean; readable: boolean | null; updated_by: string | null; updated_at: string | null; environment: boolean };
+  certificate_configured: boolean; credential_source: "portal" | "environment-certificate" | "environment-secret" | "none"; ready: boolean;
+}
+interface TestResult { ok: boolean; steps: { step: string; ok: boolean | null; detail: string }[] }
+
+const SOURCE_LABEL: Record<GraphStatus["credential_source"], string> = {
+  portal: "client secret stored in the portal",
+  "environment-certificate": "certificate from the server environment (.env)",
+  "environment-secret": "client secret from the server environment (.env)",
+  none: "nothing configured",
+};
+
+function GraphConnection() {
+  const qc = useQueryClient();
+  const [secret, setSecret] = useState("");
+  const status = useQuery({ queryKey: ["graph"], queryFn: () => api<GraphStatus>("/api/graph") });
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["graph"] }); qc.invalidateQueries({ queryKey: ["settings"] }); };
+  const save = useMutation({ mutationFn: () => put<GraphStatus>("/api/graph/secret", { value: secret }),
+                             onSuccess: () => { setSecret(""); refresh(); } });
+  const remove = useMutation({ mutationFn: () => del<GraphStatus>("/api/graph/secret"), onSuccess: refresh });
+  const test = useMutation({ mutationFn: () => post<TestResult>("/api/graph/test") });
+  if (status.isPending) return <Card title="Microsoft 365 connection"><Loading /></Card>;
+  if (status.isError) return <ErrorBox error={status.error} />;
+  const g = status.data!;
+  const cs = g.client_secret;
+
+  return (
+    <Card title="Microsoft 365 connection" actions={<button className="btn" onClick={() => test.mutate()} disabled={test.isPending || !g.ready}>{test.isPending ? "Testing…" : "Test connection"}</button>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        The app registration used to read the DMARC mailbox and send notifications (see docs/app-registratie.md).
+        Values here take precedence over the server environment. Changes take effect without a restart.
+      </p>
+      <div className="row" style={{ marginBottom: 12 }}>
+        {g.ready ? <Pill tone="good">configured</Pill> : <Pill tone="warning">not configured</Pill>}
+        <span className="muted small">Credential in use: {SOURCE_LABEL[g.credential_source]}</span>
+      </div>
+      {test.data && (
+        <div className={`alert ${test.data.ok ? "alert-good" : "alert-critical"}`} style={{ marginBottom: 12 }}>
+          {test.data.steps.map((x, i) => <div key={i}><strong>{x.ok === false ? "✕" : x.ok ? "✓" : "–"} {x.step}:</strong> {x.detail}</div>)}
+        </div>
+      )}
+      {test.isError && <div style={{ marginBottom: 12 }}><ErrorBox error={test.error} /></div>}
+      <div className="stack" style={{ gap: 12 }}>
+        <SettingRow k="graph.tenant_id" entry={g.tenant_id} type="text" help="Entra admin center → App registrations → your app → Overview → Directory (tenant) ID" />
+        <SettingRow k="graph.client_id" entry={g.client_id} type="text" help="Application (client) ID on the same Overview page" />
+        <form className="stack" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+          <label className="field" htmlFor="graph-secret"><span><strong style={{ color: "var(--text)" }}>Client secret</strong> <span className="mono">graph.client_secret</span></span></label>
+          {cs.stored ? (
+            cs.readable === false
+              ? <div className="alert alert-critical">A secret is stored but can no longer be decrypted (DMARC_SECRET_KEY changed). Enter it again.</div>
+              : <div className="row"><Pill tone="good">stored</Pill><span className="muted small">set by {cs.updated_by ?? "?"} {ago(cs.updated_at)} · it cannot be displayed again</span></div>
+          ) : (
+            <span className="muted small">{cs.environment ? "Not stored here; the client secret from the server environment (.env) is used." : g.certificate_configured ? "Not stored here; the certificate from the server environment is used." : "No secret stored yet."}</span>
+          )}
+          <div className="row">
+            <input id="graph-secret" type="password" autoComplete="new-password" value={secret} onChange={(e) => setSecret(e.target.value)}
+                   placeholder={cs.stored ? "Enter a new secret to replace it" : "Paste the secret Value (not the Secret ID)"} style={{ minWidth: 340 }} />
+            <button className="btn btn-primary" type="submit" disabled={!secret.trim() || save.isPending}>{cs.stored ? "Replace" : "Save"}</button>
+            {cs.stored && <button className="btn btn-ghost btn-danger" type="button" disabled={remove.isPending}
+                                  onClick={() => confirm("Remove the stored client secret? Fetching mail stops unless the environment provides one.") && remove.mutate()}>Remove</button>}
+            {save.isSuccess && <Pill tone="good">saved</Pill>}
+          </div>
+          <span className="muted small">The secret is stored encrypted and is never shown again — not to administrators either. Entra secrets expire (max. 24 months): replace it here in time.</span>
+          {save.isError && <ErrorBox error={save.error} />}
+        </form>
+      </div>
+    </Card>
+  );
+}
+
 function Domains() {
   const { domains } = useApp();
   const qc = useQueryClient();
@@ -127,7 +199,7 @@ function Domains() {
         ))}</tbody>
       </table></div>
       <form className="filters" style={{ marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); add.mutate(); }}>
-        <label className="field">Add domain<input value={name} onChange={(e) => setName(e.target.value)} placeholder="tenazenergy.com" required /></label>
+        <label className="field">Add domain<input value={name} onChange={(e) => setName(e.target.value)} placeholder="example.com" required /></label>
         <label className="row"><input type="checkbox" checked={parked} onChange={(e) => setParked(e.target.checked)} /> parked (never sends mail)</label>
         <button className="btn btn-primary" type="submit" disabled={add.isPending}>Add</button>
       </form>
@@ -142,15 +214,15 @@ export function Settings() {
     <>
       <div className="page-head"><h1>Settings</h1></div>
       <Domains />
-      {q.data && <Notifications settings={q.data} />}
+      <GraphConnection />
       <Card title="Mailbox">
-        <p className="muted" style={{ marginTop: 0 }}>The Graph app credentials (tenant, client id, certificate/secret) are only configured in the server environment, never here.</p>
         {q.isPending ? <Loading /> : q.isError ? <ErrorBox error={q.error} /> : (
           <div className="stack" style={{ gap: 12 }}>
             {FIELDS.map((f) => q.data![f.key] && <SettingRow key={f.key} k={f.key} entry={q.data![f.key]} type={f.type} help={f.help} />)}
           </div>
         )}
       </Card>
+      {q.data && <Notifications settings={q.data} />}
     </>
   );
 }

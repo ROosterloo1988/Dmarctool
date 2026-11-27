@@ -160,9 +160,13 @@ def cmd_graph_check(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        token = msal_token_provider(s)
+        from dmarc.graph import graph_credentials
+
+        with session_scope() as session:
+            creds = graph_credentials(session, s)
+        token = msal_token_provider(s, creds)
         token()
-        print("[ OK ] access token obtained (tenant id, client id and credential are valid)")
+        print(f"[ OK ] access token obtained (credential from: {creds.credential_source})")
     except (GraphError, OSError, ValueError) as exc:
         return fail("access token", exc)
     if not address:
@@ -364,6 +368,29 @@ def cmd_api(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_graph_secret(args: argparse.Namespace) -> int:
+    """Store or remove the Graph client secret (same as the admin portal; never printed)."""
+    import getpass
+
+    from dmarc.db.session import session_scope
+    from dmarc.secrets_store import SecretStoreError, delete_secret, secret_status, set_secret
+
+    with session_scope() as session:
+        if args.action == "set":
+            value = sys.stdin.readline().strip() if not sys.stdin.isatty() else getpass.getpass("Client secret: ")
+            try:
+                set_secret(session, "graph.client_secret", value, "cli")
+            except SecretStoreError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+        elif args.action == "delete":
+            delete_secret(session, "graph.client_secret")
+        st = secret_status(session, "graph.client_secret")
+        print("stored in database" + (f" by {st['updated_by']} at {st['updated_at']}" if st["stored"] else ": no")
+              + ("" if st["readable"] in (None, True) else " (UNREADABLE: DMARC_SECRET_KEY changed?)"))
+    return 0
+
+
 def _iter_files(paths: list[str]):
     for p in map(Path, paths):
         if p.is_dir():
@@ -453,6 +480,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("username", nargs="?")
     p.add_argument("--role", choices=["admin", "viewer"], default="admin")
     p.set_defaults(func=cmd_user)
+
+    p = sub.add_parser("graph-secret", help="store/remove the Graph client secret (value is read from stdin)")
+    p.add_argument("action", choices=["status", "set", "delete"])
+    p.set_defaults(func=cmd_graph_secret)
 
     p = sub.add_parser("api", help="run the web UI / API server")
     p.add_argument("--host", default="0.0.0.0")

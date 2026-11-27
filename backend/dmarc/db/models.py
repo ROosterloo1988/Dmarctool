@@ -362,3 +362,14 @@ class AlertEvent(Base):
     send_error: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (Index("ix_alert_event_unsent", "sent_at", "created_at"),)
+
+
+class SecretSetting(Base):
+    """Write-only secrets set from the admin portal (e.g. the Graph client secret), encrypted at rest."""
+
+    __tablename__ = "secret_setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_by: Mapped[str | None] = mapped_column(String(255))

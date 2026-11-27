@@ -270,7 +270,8 @@ def notifications_test(request: Request, db: Session = Depends(get_db), user: Cu
     if factory is None:
         from dmarc.worker import default_mailbox_factory
 
-        factory = request.app.state.mailbox_factory = default_mailbox_factory(request.app.state.settings)
+        factory = request.app.state.mailbox_factory = default_mailbox_factory(
+            request.app.state.settings, request.app.state.sessions)
     try:
         recipients = send_test(db, factory, request.app.state.settings, requested_by=user.label)
     except (ValueError, GraphError) as exc:
@@ -278,3 +279,102 @@ def notifications_test(request: Request, db: Session = Depends(get_db), user: Cu
         raise HTTPException(422, f"test mail not sent: {exc}") from None
     audit(db, request, user.label, "notify_test", ", ".join(recipients))
     return {"sent_to": recipients}
+
+
+# --------------------------------------------------------------------------------------
+# Microsoft 365 (Graph) connection
+# --------------------------------------------------------------------------------------
+
+class SecretIn(BaseModel):
+    value: str = Field(min_length=1, max_length=2048)
+
+
+def _graph_status(db: Session, settings) -> dict[str, Any]:
+    from dmarc.graph import graph_credentials
+    from dmarc.secrets_store import secret_status
+
+    values = appsettings.get_all(db, settings)
+    creds = graph_credentials(db, settings)
+    return {
+        "tenant_id": values["graph.tenant_id"],
+        "client_id": values["graph.client_id"],
+        "client_secret": secret_status(db, "graph.client_secret", settings)
+                         | {"environment": bool(settings.graph_client_secret)},
+        "certificate_configured": bool(settings.graph_certificate_path),
+        "credential_source": creds.credential_source,
+        "ready": bool(creds.tenant_id and creds.client_id and creds.credential_source != "none"),
+    }
+
+
+@router.get("/graph", dependencies=[Depends(require_admin)])
+def graph_status(request: Request, db: Session = Depends(get_db)):
+    return _graph_status(db, request.app.state.settings)
+
+
+@router.put("/graph/secret")
+def graph_set_secret(body: SecretIn, request: Request, db: Session = Depends(get_db),
+                     user: CurrentUser = Depends(require_admin)):
+    from dmarc.secrets_store import SecretStoreError, set_secret
+
+    try:
+        set_secret(db, "graph.client_secret", body.value, user.label, request.app.state.settings)
+    except SecretStoreError as exc:
+        raise HTTPException(422, str(exc)) from None
+    audit(db, request, user.label, "secret_set", "graph.client_secret")  # never the value itself
+    return _graph_status(db, request.app.state.settings)
+
+
+@router.delete("/graph/secret")
+def graph_delete_secret(request: Request, db: Session = Depends(get_db), user: CurrentUser = Depends(require_admin)):
+    from dmarc.secrets_store import delete_secret
+
+    if delete_secret(db, "graph.client_secret"):
+        audit(db, request, user.label, "secret_delete", "graph.client_secret")
+    return _graph_status(db, request.app.state.settings)
+
+
+@router.post("/graph/test")
+def graph_test(request: Request, db: Session = Depends(get_db), user: CurrentUser = Depends(require_admin)):
+    """Check the connection step by step: token, read access to the source folder, folders."""
+    from dmarc.graph import GraphError, GraphMailbox, graph_credentials, msal_token_provider
+
+    settings = request.app.state.settings
+    steps: list[dict[str, Any]] = []
+
+    def step(name: str, ok: bool | None, detail: str) -> None:
+        steps.append({"step": name, "ok": ok, "detail": detail})
+
+    cfg = appsettings.mailbox_config(db, settings)
+    try:
+        token = msal_token_provider(settings, graph_credentials(db, settings))
+        token()
+        step("Access token", True, "Tenant ID, client ID and secret are valid.")
+    except (GraphError, OSError, ValueError) as exc:
+        step("Access token", False, str(exc))
+        audit(db, request, user.label, "graph_test", None, ok=False)
+        return {"ok": False, "steps": steps}
+    if not cfg.address:
+        step("Mailbox", False, "No mailbox address set (see Mailbox below).")
+        return {"ok": False, "steps": steps}
+    http = getattr(request.app.state, "graph_http", None)
+    mb = GraphMailbox(cfg.address, token, settings, http=http) if http else GraphMailbox(cfg.address, token, settings)
+    try:
+        folder = mb.resolve_folder(cfg.source_folder)
+        n = len(list(mb.list_messages(folder, 10)))
+        step("Read access", True, f"'{cfg.source_folder}' in {cfg.address}: {n if n < 10 else '10+'} message(s) waiting.")
+        for f in (cfg.processed_folder, cfg.failed_folder):
+            try:
+                mb.resolve_folder(f)
+                step(f"Folder '{f}'", True, "exists")
+            except GraphError as exc:
+                if exc.status != 404:
+                    raise
+                step(f"Folder '{f}'", None, "does not exist yet; created on the first fetch")
+    except GraphError as exc:
+        step("Read access", False, str(exc))
+    finally:
+        if not http:
+            mb.close()
+    ok = all(x["ok"] is not False for x in steps)
+    audit(db, request, user.label, "graph_test", cfg.address, ok=ok)
+    return {"ok": ok, "steps": steps}

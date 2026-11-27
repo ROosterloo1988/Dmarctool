@@ -67,7 +67,7 @@ def test_dns_warnings_go_to_digest_once(setup, session, settings, mailbox_factor
     assert msg["subject"] == "DMARC daily summary: 2 item(s)"
     assert [x["emailAddress"]["address"] for x in msg["toRecipients"]] == ["it@example.com", "security@example.com"]
     assert "selector1._domainkey.example.com" in msg["body"]["content"]
-    assert "https://dmarcportal.tenazenergy.com/dns" in msg["body"]["content"]
+    assert "http://localhost:8080/dns" in msg["body"]["content"]
 
     # Same day, later: no second digest; next day nothing new -> no mail either.
     assert run_alerts(session, mailbox_factory, settings, T0 + timedelta(hours=5))["digest_sent"] == 0
